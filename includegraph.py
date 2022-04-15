@@ -128,9 +128,9 @@ def build_header_dependency_graph(includes: Iterable[FileInclusion]) -> Dict:
     graph = collections.defaultdict(list)
     file_include: FileInclusion
     for file_include in includes:
-        logging.debug("Found header inclusion: %s", file_include)
-        source = file_include.source.name
-        included_file = file_include.include.name
+        # logging.debug("Found header inclusion: %s -> %s", file_include.source, file_include.include)
+        source = file_include.source#.name
+        included_file = file_include.include#.name
         graph[source].append(included_file)
 
     return graph
