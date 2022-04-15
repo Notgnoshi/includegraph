@@ -1,0 +1,4 @@
+# https://pypi.org/project/libclang/
+libclang
+# There's also https://pypi.org/project/clang/, which doesn't provide its own libclang.so
+#clang
