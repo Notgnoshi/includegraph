@@ -109,3 +109,52 @@ $ ./includegraph.py examples/example1/build/ -O graphviz | dot -Tx11
 ```
 
 ![dependency graph](examples/example1/graph.svg)
+
+## Notes
+
+`example2` and `example3` are the same, except `example2` uses `#pragma once` header guards:
+```
+$ c++ -Iexamples/example2/include -Iexamples/example2/src -c examples/example2/src/example2.cpp -E
+# 1 "examples/example2/src/example2.cpp"
+# 1 "<built-in>"
+# 1 "<command-line>"
+# 1 "/usr/include/stdc-predef.h" 1 3 4
+# 1 "<command-line>" 2
+# 1 "examples/example2/src/example2.cpp"
+# 1 "examples/example2/include/example2/foo.h" 1
+# 2 "examples/example2/src/example2.cpp" 2
+# 1 "examples/example2/include/example2/bar.h" 1
+# 3 "examples/example2/src/example2.cpp" 2
+# 1 "examples/example2/src/private.h" 1
+# 1 "examples/example2/src/circular.h" 1
+# 2 "examples/example2/src/private.h" 2
+# 3 "examples/example2/src/example2.cpp" 2
+```
+and `example3` uses `#ifndef, #define, #endif` header guards:
+```
+$ c++ -Iexamples/example3/include -Iexamples/example3/src -c examples/example3/src/example3.cpp -E
+# 1 "examples/example3/src/example3.cpp"
+# 1 "<built-in>"
+# 1 "<command-line>"
+# 1 "/usr/include/stdc-predef.h" 1 3 4
+# 1 "<command-line>" 2
+# 1 "examples/example3/src/example3.cpp"
+# 1 "examples/example3/include/example3/foo.h" 1
+# 2 "examples/example3/src/example3.cpp" 2
+# 1 "examples/example3/include/example3/bar.h" 1
+# 3 "examples/example3/src/example3.cpp" 2
+# 1 "examples/example3/src/private.h" 1
+# 1 "examples/example3/src/circular.h" 1
+# 1 "examples/example3/src/private.h" 1
+# 4 "examples/example3/src/circular.h" 2
+# 4 "examples/example3/src/private.h" 2
+# 3 "examples/example3/src/example3.cpp" 2
+```
+notice that they're different in their handling of the circular dependency between `private.h` and `circular.h`.
+
+I suppose this makes sense, because the `#ifndef` doesn't prevent the file from being `#include`d,
+it only prevents the file's _contents_ from being included a second time. Whereas `#pragma once`
+actually prevents the file from being included _at all_ the second time.
+
+I think that libraries like Boost that do weird multiple inclusions (recursive even) would break the
+graph generation; we can't tell if subsequent inclusions are intended or not.
