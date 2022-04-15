@@ -9,7 +9,7 @@ import re
 import shlex
 import subprocess
 import sys
-from typing import Dict, Iterable, List, Optional, TextIO, Tuple
+from typing import Dict, Iterable, List, Optional, TextIO
 
 LOG_LEVELS = {
     "CRITICAL": logging.CRITICAL,
@@ -18,7 +18,7 @@ LOG_LEVELS = {
     "INFO": logging.INFO,
     "DEBUG": logging.DEBUG,
 }
-DEFAULT_LEVEL = "DEBUG"
+DEFAULT_LEVEL = "INFO"
 
 
 def parse_args():
@@ -45,22 +45,6 @@ def parse_args():
         default="tree",
         choices=["graphviz", "tree"],
         help="The output format for the parsed header dependency graph.",
-    )
-    # TODO: Trim common prefix from output?
-    # TODO: Does not passing --all-includes preclude circular dependency detection?
-    parser.add_argument(
-        "--all-includes",
-        "-a",
-        action="store_true",
-        default=False,
-        help="Ignore header guards and show all includes",
-    )
-    parser.add_argument(
-        "--system-headers",
-        "-s",
-        action="store_true",
-        default=False,
-        help="Keep system headers in the generated graph",
     )
     parser.add_argument(
         "--log-level",
@@ -134,41 +118,58 @@ def invoke_compiler(source_entry) -> subprocess.Popen:
     """Run the command specified by the compilation database entry."""
     directory = source_entry["directory"]
     arguments = source_entry["arguments"]
-    logging.debug("Invoking compiler with: %s", arguments)
+    logging.info("Invoking compiler with: %s", arguments)
     return subprocess.Popen(arguments, cwd=directory, stdout=subprocess.PIPE)
 
 
 # See: https://gcc.gnu.org/onlinedocs/cpp/Preprocessor-Output.html
-LINEMARKER_PATTERN = re.compile(rb'^#\s+(?P<linenumber>\d+)\s+(?P<filename>".*")\s*(?P<flags>.*$)?')
+LINEMARKER_PATTERN = re.compile(rb'^#\s+(?P<linenumber>\d+)\s+"(?P<filename>.*)"\s*(?P<flags>.*$)?')
+LINEMARKER_FLAG_FILE_START = 1
+LINEMARKER_FLAG_FILE_END = 2
+LINEMARKER_FLAG_SYSTEM_HEADER = 3
+LINEMARKER_FLAG_EXTERN_C = 4
 
 
-def parse_linemarkers_from_preprocessor_output(proc: subprocess.Popen) -> Dict[bytes, bytes]:
+def parse_linemarkers_from_match(match: re.Match) -> Dict:
+    """Turn the regex matches into a 'nice' data structure."""
+    parsed = {}
+    raw = match.groupdict()
+
+    parsed["linenumber"] = raw["linenumber"].decode("utf-8")
+    parsed["filename"] = raw["filename"].decode("utf-8")
+
+    flags = raw["flags"].decode("utf-8").split()
+    parsed["flags"] = [int(f) for f in flags]
+
+    return parsed
+
+
+def parse_linemarkers_from_preprocessor_output(proc: subprocess.Popen) -> Dict:
     """Parse the preprocessor linemarkers from the compiler stdout output."""
     for line in proc.stdout:
         match = LINEMARKER_PATTERN.match(line)
         if match is not None:
-            linemarker = match.groupdict()
-            logging.debug("Linemarker: %s", linemarker)
+            linemarker = parse_linemarkers_from_match(match)
             yield linemarker
+    proc.wait()
+    if proc.returncode != 0:
+        logging.error("Failed on args: %s", proc.args)
+        # sys.exit(1)
 
 
-def parse_source_file_includes(source_entry: Dict) -> Iterable[Dict]:
+def parse_source_file_linemarkers(source_entry: Dict) -> Iterable[Dict]:
     """Invoke the preprocessor and parse its stdout to build the include graph.
 
     Assumes "-o" has been removed from the arguments and "-E" has been added. Munges through the
     compiler's stdout to find and parse preprocessor linemarkers.
     """
-    logging.info("Parsing includes from: %s", source_entry["file"])
     proc = invoke_compiler(source_entry)
     linemarkers = parse_linemarkers_from_preprocessor_output(proc)
-    # Exhaust iterable
-    list(linemarkers)
-
-    return []
+    return linemarkers
 
 
-def get_tu_includes(source_entry: Dict) -> Iterable[Dict]:
-    """Get the #includes from the given translation unit from the compilation database."""
+def get_tu_linemarkers(source_entry: Dict) -> Iterable[Dict]:
+    """Get the preprocessor linemarkers from the given translation unit database entry."""
     # Normalize "command" -> "arguments"
     source_entry = normalize_command_to_arguments(source_entry)
     # Strip out -o so that we can parse the stdout output with the linemarkers
@@ -176,24 +177,57 @@ def get_tu_includes(source_entry: Dict) -> Iterable[Dict]:
     # Instrument with -E
     source_entry["arguments"] += ["-E"]
     # Parse compiler output
-    parsed_includes = parse_source_file_includes(source_entry)
+    linemarkers = parse_source_file_linemarkers(source_entry)
 
-    return parsed_includes
+    return linemarkers
 
 
-def get_project_includes(database: List[Dict]) -> Iterable[Dict]:
-    """Get the #includes from the given compilation database."""
+def get_project_linemarkers(database: List[Dict]) -> Iterable[Dict]:
+    """Get the linemarkers from the given compilation database."""
     for entry in database:
-        entry_headers = get_tu_includes(entry)
-        yield from entry_headers
+        entry_linemarkers = get_tu_linemarkers(entry)
+        # Mark the start of a new translation unit with a sentinel value
+        yield None
+        yield from entry_linemarkers
 
 
-def build_header_dependency_graph(includes: Iterable[Dict]) -> Dict:
-    """Build a dependency graph from a set of FileInclusion objects."""
-    graph = collections.defaultdict(list)
-    for include in includes:
-        # TODO: Depends on output format from get_tu_includes
-        pass
+def build_header_dependency_graph(linemarkers: Iterable[Dict]) -> Dict:
+    """Build a dependency graph from a set of preprocessor linemarkers."""
+    graph = collections.defaultdict(set)
+    stack = []
+    current_tu = None
+    for linemarker in linemarkers:
+        if linemarker is None:
+            stack.clear()
+            continue
+
+        # The start of a new translation unit
+        if not stack:
+            current_tu = linemarker["filename"]
+            stack.append(current_tu)
+            if current_tu not in graph:
+                graph[current_tu] = set()
+
+        filename = linemarker["filename"]
+        flags = linemarker["flags"]
+
+        # Ignore the linemarkers without flags. They either seem to be <built-in>, <command-line>,
+        # or a duplicate of the start of the translation unit.
+        if not flags:
+            continue
+
+        if 1 in flags:
+            source = stack[-1]
+            target = filename
+            stack.append(filename)
+            # Skip system headers for now
+            if 3 not in flags:
+                logging.debug("Adding: %s -> %s", source, target)
+                graph[source].add(target)
+
+        if 2 in flags:
+            _ = stack.pop()
+
     return graph
 
 
@@ -270,8 +304,8 @@ def main(args):
     database_path = pathlib.Path(args.compilation_database)
     database = load_compilation_database(database_path)
     logging.debug("Successfully loaded compilation database from '%s'", database_path)
-    includes = get_project_includes(database)
-    include_graph = build_header_dependency_graph(includes)
+    linemarkers = get_project_linemarkers(database)
+    include_graph = build_header_dependency_graph(linemarkers)
     output_dep_graph(include_graph, args.output, args.output_format)
 
 
@@ -282,5 +316,4 @@ if __name__ == "__main__":
         level=LOG_LEVELS.get(args.log_level),
         stream=sys.stderr,
     )
-    logging = logging.getLogger(name=__file__)
     main(args)
