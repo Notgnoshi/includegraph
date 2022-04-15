@@ -2,19 +2,14 @@
 """Generate the C preprocessor header dependency graph from a Clang compilation database."""
 import argparse
 import collections
+import json
 import logging
+import pathlib
+import re
+import shlex
+import subprocess
 import sys
-from typing import Dict, Iterable, List, TextIO
-
-from clang.cindex import (
-    CompilationDatabase,
-    CompilationDatabaseError,
-    CompileCommand,
-    FileInclusion,
-    Index,
-    TranslationUnit,
-    TranslationUnitLoadError,
-)
+from typing import Dict, Iterable, List, Optional, TextIO, Tuple
 
 LOG_LEVELS = {
     "CRITICAL": logging.CRITICAL,
@@ -23,15 +18,7 @@ LOG_LEVELS = {
     "INFO": logging.INFO,
     "DEBUG": logging.DEBUG,
 }
-DEFAULT_LEVEL = "INFO"
-
-
-def file_inclusion_repr(i: FileInclusion) -> str:
-    return f"FileInclusion<source={i.source}, include={i.include}, location={i.location}, depth={i.depth}>"
-
-
-# Make a FileInclusion printable
-FileInclusion.__repr__ = file_inclusion_repr
+DEFAULT_LEVEL = "DEBUG"
 
 
 def parse_args():
@@ -39,10 +26,10 @@ def parse_args():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
-        "build_dir",
-        metavar="build-dir",
+        "compilation_database",
+        metavar="compilation-database",
         type=str,
-        help="The path to the build directory containing a compilation database.",
+        help="The path to the compilation database.",
     )
     parser.add_argument(
         "--output",
@@ -60,6 +47,21 @@ def parse_args():
         help="The output format for the parsed header dependency graph.",
     )
     # TODO: Trim common prefix from output?
+    # TODO: Does not passing --all-includes preclude circular dependency detection?
+    parser.add_argument(
+        "--all-includes",
+        "-a",
+        action="store_true",
+        default=False,
+        help="Ignore header guards and show all includes",
+    )
+    parser.add_argument(
+        "--system-headers",
+        "-s",
+        action="store_true",
+        default=False,
+        help="Keep system headers in the generated graph",
+    )
     parser.add_argument(
         "--log-level",
         "-l",
@@ -71,68 +73,127 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_compilation_database(build_dir: str) -> CompilationDatabase:
+def load_compilation_database(compilation_database: pathlib.Path) -> Dict:
     """Load the compilation database from the given path."""
+    database = None
     try:
-        return CompilationDatabase.fromDirectory(build_dir)
-    except CompilationDatabaseError as e:
-        logging.critical("Failed to load compilation database from '%s':", build_dir, exc_info=e)
+        database = json.load(compilation_database.open())
+    except json.JSONDecodeError as e:
+        logging.critical(
+            "Failed to load compilation database from %s", compilation_database, exc_info=e
+        )
+        sys.exit(1)
+    if not isinstance(database, list):
+        logging.critical(
+            "Expected compilation database to be an array of objects. Got: %s", database
+        )
         sys.exit(1)
 
+    return database
 
-def get_tu_includes(entry: CompileCommand, index: Index) -> Iterable[FileInclusion]:
-    """Get the #includes from the given CompileCommand for a translation unit."""
-    source_file = entry.filename
-    compile_args = list(entry.arguments)
-    # Strip off compiler (which is guaranteed to be there)
-    compile_args = compile_args[1:]
-    parse_options = TranslationUnit.PARSE_SKIP_FUNCTION_BODIES | TranslationUnit.PARSE_INCOMPLETE
 
-    try:
-        # Don't specify the filename, because if we do that _and_ leave the filename in the compiler
-        # arguments, it can't parse the translation unit
-        tu = TranslationUnit.from_source(
-            filename=None, args=compile_args, options=parse_options, index=index
-        )
-        # TODO: Unfortunately, this only includes (ba dum tshh) headers that were _actually_
-        # included, and thus, because of header guards, can't show circular dependencies, even
-        # though that would be _immensely_ useful.
-        #
-        # I think to solve this, I _have_ to invoke CXX with -E and munge the stdout output.
-        # This way, the context of the "ifndef, define" and "pragma once" header guards get lost for
-        # each file, so you get the full graph.
-        includes = tu.get_includes()
-        return includes
-    except TranslationUnitLoadError as e:
-        logging.error(
-            "Failed to load translation unit from compilation database for: '%s'",
-            source_file,
-            exc_info=e,
-        )
+def normalize_command_to_arguments(source_entry: Dict) -> Optional[Dict]:
+    """Normalize and validate the given database entry.
+
+    See: https://clang.llvm.org/docs/JSONCompilationDatabase.html
+    """
+    if "directory" not in source_entry:
+        logging.error("Missing required 'directory' key in %s", source_entry)
+        return None
+    if "file" not in source_entry:
+        logging.error("Missing required 'file' key in %s", source_entry)
+        return None
+    if "command" in source_entry:
+        command = source_entry["command"]
+        del source_entry["command"]
+        arguments = shlex.split(command)
+        source_entry["arguments"] = arguments
+    if "arguments" not in source_entry:
+        logging.error("Missing required 'arguments' key in %s", source_entry)
+        return None
+    return source_entry
+
+
+def strip_output_argument(arguments: List[str]) -> List[str]:
+    """Strip any "-o" flags (and arguments) to the compiler."""
+    # Strip both "-o", "value" and "-o=value"
+    stripped_args = []
+    arguments = iter(arguments)
+    for arg in arguments:
+        if arg.startswith("-o"):
+            if arg == "-o":
+                # skip the next argument (the -o flag's value)
+                next(arguments, None)
+            # skip this argument
+            continue
+        stripped_args.append(arg)
+    return stripped_args
+
+
+def invoke_compiler(source_entry) -> subprocess.Popen:
+    """Run the command specified by the compilation database entry."""
+    directory = source_entry["directory"]
+    arguments = source_entry["arguments"]
+    logging.debug("Invoking compiler with: %s", arguments)
+    return subprocess.Popen(arguments, cwd=directory, stdout=subprocess.PIPE)
+
+
+# See: https://gcc.gnu.org/onlinedocs/cpp/Preprocessor-Output.html
+LINEMARKER_PATTERN = re.compile(rb'^#\s+(?P<linenumber>\d+)\s+(?P<filename>".*")\s*(?P<flags>.*$)?')
+
+
+def parse_linemarkers_from_preprocessor_output(proc: subprocess.Popen) -> Dict[bytes, bytes]:
+    """Parse the preprocessor linemarkers from the compiler stdout output."""
+    for line in proc.stdout:
+        match = LINEMARKER_PATTERN.match(line)
+        if match is not None:
+            linemarker = match.groupdict()
+            logging.debug("Linemarker: %s", linemarker)
+            yield linemarker
+
+
+def parse_source_file_includes(source_entry: Dict) -> Iterable[Dict]:
+    """Invoke the preprocessor and parse its stdout to build the include graph.
+
+    Assumes "-o" has been removed from the arguments and "-E" has been added. Munges through the
+    compiler's stdout to find and parse preprocessor linemarkers.
+    """
+    logging.info("Parsing includes from: %s", source_entry["file"])
+    proc = invoke_compiler(source_entry)
+    linemarkers = parse_linemarkers_from_preprocessor_output(proc)
+    # Exhaust iterable
+    list(linemarkers)
+
     return []
 
 
-def get_project_includes(database: CompilationDatabase) -> Iterable[FileInclusion]:
+def get_tu_includes(source_entry: Dict) -> Iterable[Dict]:
+    """Get the #includes from the given translation unit from the compilation database."""
+    # Normalize "command" -> "arguments"
+    source_entry = normalize_command_to_arguments(source_entry)
+    # Strip out -o so that we can parse the stdout output with the linemarkers
+    source_entry["arguments"] = strip_output_argument(source_entry["arguments"])
+    # Instrument with -E
+    source_entry["arguments"] += ["-E"]
+    # Parse compiler output
+    parsed_includes = parse_source_file_includes(source_entry)
+
+    return parsed_includes
+
+
+def get_project_includes(database: List[Dict]) -> Iterable[Dict]:
     """Get the #includes from the given compilation database."""
-    exclude_local_declarations = True
-    index = Index.create(exclude_local_declarations)
-    compile_commands = database.getAllCompileCommands()
-    for entry in compile_commands:
-        logging.debug("Getting headers for %s", entry.filename)
-        entry_headers = get_tu_includes(entry, index)
+    for entry in database:
+        entry_headers = get_tu_includes(entry)
         yield from entry_headers
 
 
-def build_header_dependency_graph(includes: Iterable[FileInclusion]) -> Dict:
+def build_header_dependency_graph(includes: Iterable[Dict]) -> Dict:
     """Build a dependency graph from a set of FileInclusion objects."""
     graph = collections.defaultdict(list)
-    file_include: FileInclusion
-    for file_include in includes:
-        # logging.debug("Found header inclusion: %s -> %s", file_include.source, file_include.include)
-        source = file_include.source#.name
-        included_file = file_include.include#.name
-        graph[source].append(included_file)
-
+    for include in includes:
+        # TODO: Depends on output format from get_tu_includes
+        pass
     return graph
 
 
@@ -178,6 +239,10 @@ def output_dep_graph_tree(graph: Dict, file: TextIO):
                 path = recursive_dfs_helper(graph, neighbor, file, depth + 1, path)
         return path
 
+    # Don't crash on an empty graph
+    if not graph:
+        return
+
     # Get a top-level candidate (is not depended on by anything else) to print first at depth=0
     sorted_keys = topological_sort(graph)
     root = sorted_keys[-1]
@@ -202,10 +267,9 @@ def output_dep_graph(graph: Dict, file: TextIO, format: str):
 
 
 def main(args):
-    database = load_compilation_database(args.build_dir)
-    logging.debug(
-        "Successfully loaded compilation database from build directory '%s'", args.build_dir
-    )
+    database_path = pathlib.Path(args.compilation_database)
+    database = load_compilation_database(database_path)
+    logging.debug("Successfully loaded compilation database from '%s'", database_path)
     includes = get_project_includes(database)
     include_graph = build_header_dependency_graph(includes)
     output_dep_graph(include_graph, args.output, args.output_format)
