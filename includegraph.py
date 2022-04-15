@@ -102,7 +102,6 @@ def get_tu_includes(entry: CompileCommand, index: Index) -> Iterable[FileInclusi
         # This way, the context of the "ifndef, define" and "pragma once" header guards get lost for
         # each file, so you get the full graph.
         includes = tu.get_includes()
-        logging.debug("Parsed headers from translation unit: '%s'", source_file)
         return includes
     except TranslationUnitLoadError as e:
         logging.error(
@@ -119,6 +118,7 @@ def get_project_includes(database: CompilationDatabase) -> Iterable[FileInclusio
     index = Index.create(exclude_local_declarations)
     compile_commands = database.getAllCompileCommands()
     for entry in compile_commands:
+        logging.debug("Getting headers for %s", entry.filename)
         entry_headers = get_tu_includes(entry, index)
         yield from entry_headers
 
@@ -128,7 +128,7 @@ def build_header_dependency_graph(includes: Iterable[FileInclusion]) -> Dict:
     graph = collections.defaultdict(list)
     file_include: FileInclusion
     for file_include in includes:
-        logging.debug("Inclusion: %s", file_include)
+        logging.debug("Found header inclusion: %s", file_include)
         source = file_include.source.name
         included_file = file_include.include.name
         graph[source].append(included_file)
