@@ -95,6 +95,26 @@ def normalize_command_to_arguments(source_entry: Dict) -> Optional[Dict]:
     if "arguments" not in source_entry:
         logging.error("Missing required 'arguments' key in %s", source_entry)
         return None
+
+    # On the same problem project as the rest of the special cases, Qt Creator generated a single
+    # "argument" that was actually multiple space-separated arguments. What's worse, was that it
+    # began with whitespace, so g++ actually treated _it_ as the source filename (because there
+    # weren't leading -'s I guess?)
+    new_args = []
+    for arg in source_entry["arguments"]:
+        args = shlex.split(arg)
+        new_args += args
+    source_entry["arguments"] = new_args
+
+    # Not a long-term solution. Qt Creator generated a compile_commands.json with arguments it
+    # didn't actually pass to the compiler. Will need to instrument plumbing to add/remove arbitrary
+    # compiler commandline arguments. Use the same spec as the .clangd YAML file (but use JSON to
+    # keep it stdlib only).
+    banned_args = ["-m32", "--target=arm-dey-linux-gnueabi"]
+    for arg in banned_args:
+        if arg in source_entry["arguments"]:
+            source_entry["arguments"].remove(arg)
+
     return source_entry
 
 
@@ -210,6 +230,11 @@ def build_header_dependency_graph(linemarkers: Iterable[Dict]) -> Dict:
 
         filename = linemarker["filename"]
         flags = linemarker["flags"]
+
+        # Special case. I don't know man, the preprocessor generated a linemarker for a directory in
+        # one of the projects I tested it on.
+        if filename.endswith("/"):
+            continue
 
         # Ignore the linemarkers without flags. They either seem to be <built-in>, <command-line>,
         # or a duplicate of the start of the translation unit.
