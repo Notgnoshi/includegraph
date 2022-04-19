@@ -11,6 +11,11 @@ projects, especially those that might use an embedded toolchain or generated cod
 
 1. A `compile_commands.json` compilation database for your project
 2. The project source code, including any generated files.
+3. An environment in which `includegraph.py` can invoke the compiler specified by the compilation
+   database.
+
+   E.g., if the database uses a compiler from a Yocto eSDK toolchain, you'll need to source the
+   `environment-stup-*` script prior to invoking `includegraph.py`.
 
 ## How do I get a compilation database?
 
