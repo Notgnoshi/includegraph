@@ -10,7 +10,7 @@ import re
 import shlex
 import subprocess
 import sys
-from typing import Dict, Iterable, List, Optional, Set, TextIO
+from typing import Dict, Iterable, List, Optional, Set, TextIO, TypeVar
 
 LOG_LEVELS = {
     "CRITICAL": logging.CRITICAL,
@@ -222,8 +222,10 @@ FileAttributes = collections.namedtuple(
 # attributes: FileAttributes
 GraphNode = collections.namedtuple("GraphNode", ["filename", "attributes"])
 
+HeaderGraph = Dict[GraphNode, Set[GraphNode]]
 
-def build_header_dependency_graph(linemarkers: Iterable[Dict]) -> Dict:
+
+def build_header_dependency_graph(linemarkers: Iterable[Dict]) -> HeaderGraph:
     """Build a dependency graph from a set of preprocessor linemarkers."""
     graph = collections.defaultdict(set)
     stack = []
@@ -279,7 +281,7 @@ class GraphFormatter(abc.ABC):
     visited, and then each edge in the edge list is visited.
     """
 
-    def start_node_list(self, graph: Dict[GraphNode, Set[GraphNode]], output: TextIO):
+    def start_node_list(self, graph: HeaderGraph, output: TextIO):
         """Mark the beginning of the node list.
 
         Also marks the beginning of formatting.
@@ -288,22 +290,22 @@ class GraphFormatter(abc.ABC):
     def visit_node(self, node: GraphNode, output: TextIO):
         """Visit a node in the node list."""
 
-    def finish_node_list(self, graph: Dict[GraphNode, Set[GraphNode]], output: TextIO):
+    def finish_node_list(self, graph: HeaderGraph, output: TextIO):
         """Mark the end of the node list."""
 
-    def start_edge_list(self, graph: Dict[GraphNode, Set[GraphNode]], output: TextIO):
+    def start_edge_list(self, graph: HeaderGraph, output: TextIO):
         """Mark the beginning of the edge list."""
 
     def visit_edge(self, source: GraphNode, target: GraphNode, output: TextIO):
         """Visit an edge in the edge list."""
 
-    def finish_edge_list(self, graph: Dict[GraphNode, Set[GraphNode]], output: TextIO):
+    def finish_edge_list(self, graph: HeaderGraph, output: TextIO):
         """Mark the end of the edge list.
 
         Also marks the end of formatting.
         """
 
-    def format(self, graph: Dict[GraphNode, Set[GraphNode]], output: TextIO):
+    def format(self, graph: HeaderGraph, output: TextIO):
         """Serialize the given graph to the given output object."""
         self.start_node_list(graph, output)
         for node in graph.keys():
@@ -325,7 +327,7 @@ class SimpleTgfGraphFormatter(GraphFormatter):
     def visit_node(self, node: GraphNode, output: TextIO):
         print(f'"{node.filename}"\t"{node.attributes}"', file=output)
 
-    def finish_node_list(self, graph: Dict[GraphNode, Set[GraphNode]], output: TextIO):
+    def finish_node_list(self, graph: HeaderGraph, output: TextIO):
         print("#", file=output)
 
     def visit_edge(self, source: GraphNode, target: GraphNode, output: TextIO):

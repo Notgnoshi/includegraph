@@ -5,13 +5,19 @@ import collections
 import logging
 import pathlib
 import sys
-from typing import Dict, Iterable, Set, TextIO
+from typing import Dict, Iterable, Set, TextIO, Any
 
 # Assumes that includegraph.py is a sibling of this script.
 repo_root = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(repo_root))
 try:
-    from includegraph import FileAttributes, GraphFormatter, GraphNode, SimpleTgfGraphFormatter
+    from includegraph import (
+        FileAttributes,
+        GraphFormatter,
+        GraphNode,
+        HeaderGraph,
+        SimpleTgfGraphFormatter,
+    )
 except ImportError:
     logging.critical("Failed to import types from includegraph.py")
     raise
@@ -104,7 +110,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_tgf_graph(input: TextIO) -> Dict[GraphNode, Set[GraphNode]]:
+def parse_tgf_graph(input: TextIO) -> HeaderGraph:
     """Parse graph in TGF format.
 
     Nodes include metadata as specified by GraphNode and FileAttributes, and as serialized by
@@ -146,7 +152,9 @@ def parse_tgf_graph(input: TextIO) -> Dict[GraphNode, Set[GraphNode]]:
                 # enough that we could parse the hard way if we wanted.
                 file_attributes = eval(file_attributes, {}, {"FileAttributes": FileAttributes})
                 attributes[filename] = file_attributes
-                logging.debug("Parsed attributes for filename: '%s' -> '%s'", filename, file_attributes)
+                logging.debug(
+                    "Parsed attributes for filename: '%s' -> '%s'", filename, file_attributes
+                )
             except BaseException as e:
                 logging.error(
                     "Failed to parse attributes '%s' as FileAttributes", file_attributes, exc_info=e
@@ -163,7 +171,6 @@ def parse_tgf_graph(input: TextIO) -> Dict[GraphNode, Set[GraphNode]]:
         graph[source_node] = set()
 
     logging.info("Parsed %d nodes", len(filenames))
-
 
     # Read the edge list until the end
     for line in lines:
@@ -192,7 +199,7 @@ def parse_tgf_graph(input: TextIO) -> Dict[GraphNode, Set[GraphNode]]:
     return graph
 
 
-def topological_sort(graph: Dict[str, Iterable[str]]) -> Iterable[str]:
+def topological_sort(graph: Dict[Any, Iterable[Any]]) -> Iterable[Any]:
     """Topologically sort the keys of a graph."""
     sorted_keys = []
     seen = set()
@@ -210,7 +217,7 @@ def topological_sort(graph: Dict[str, Iterable[str]]) -> Iterable[str]:
     return sorted_keys
 
 
-def output_graph_tree(graph: Dict, output: TextIO):
+def output_graph_tree(graph: HeaderGraph, output: TextIO):
     """Output the include graph as a tree.
 
     Example:
@@ -223,7 +230,7 @@ def output_graph_tree(graph: Dict, output: TextIO):
     Each level of indentation will be a single tab character.
     """
 
-    def recursive_dfs_helper(graph: Dict, source: GraphNode, depth: int, path=[]):
+    def recursive_dfs_helper(graph: HeaderGraph, source: GraphNode, depth: int, path=[]):
         indent = "\t" * depth
         print(f"{indent}{source.filename}", file=output)
         if source not in path:
@@ -245,7 +252,7 @@ def output_graph_tree(graph: Dict, output: TextIO):
     recursive_dfs_helper(graph, root, depth=0)
 
 
-def output_graph_graphviz(graph: Dict, output: TextIO):
+def output_graph_graphviz(graph: HeaderGraph, output: TextIO):
     """Output the include graph in Graphviz format."""
     print("digraph header_graph {", file=output)
     for source, targets in graph.items():
@@ -254,7 +261,7 @@ def output_graph_graphviz(graph: Dict, output: TextIO):
     print("}", file=output)
 
 
-def output_graph(graph: Dict[GraphNode, Set[GraphNode]], output: TextIO, format: str):
+def output_graph(graph: HeaderGraph, output: TextIO, format: str):
     formatter = None
     if format == "tgf":
         formatter = SimpleTgfGraphFormatter()
