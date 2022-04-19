@@ -5,7 +5,7 @@ import collections
 import logging
 import pathlib
 import sys
-from typing import Dict, Iterable, Set, TextIO, Any
+from typing import Any, Dict, Iterable, Set, TextIO
 
 # Assumes that includegraph.py is a sibling of this script.
 repo_root = pathlib.Path(__file__).resolve().parent
@@ -252,13 +252,15 @@ def output_graph_tree(graph: HeaderGraph, output: TextIO):
     recursive_dfs_helper(graph, root, depth=0)
 
 
-def output_graph_graphviz(graph: HeaderGraph, output: TextIO):
-    """Output the include graph in Graphviz format."""
-    print("digraph header_graph {", file=output)
-    for source, targets in graph.items():
-        for target in targets:
-            print(f'\t"{source.filename}" -> "{target.filename}";', file=output)
-    print("}", file=output)
+class SimpleGraphvizFormatter(GraphFormatter):
+    def start_node_list(self, graph: HeaderGraph, output: TextIO):
+        print("digraph header_graph {", file=output)
+
+    def visit_edge(self, source: GraphNode, target: GraphNode, output: TextIO):
+        print(f'\t"{source.filename}" -> "{target.filename}";', file=output)
+
+    def finish_edge_list(self, graph: HeaderGraph, output: TextIO):
+        print("}", file=output)
 
 
 def output_graph(graph: HeaderGraph, output: TextIO, format: str):
@@ -269,7 +271,8 @@ def output_graph(graph: HeaderGraph, output: TextIO, format: str):
     elif format == "tree":
         output_graph_tree(graph, output)
     elif format == "graphviz":
-        output_graph_graphviz(graph, output)
+        formatter = SimpleGraphvizFormatter()
+        formatter.format(graph, output)
     else:
         sys.exit(1)
 
