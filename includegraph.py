@@ -264,7 +264,10 @@ def output_dep_graph_tree(graph: Dict, file: TextIO):
 
     def recursive_dfs_helper(graph: Dict, source: str, file: TextIO, depth: int, path=[]):
         indent = "\t" * depth
-        print(f"{indent}{source}", file=file)
+        # TODO: Leave the nodes as absolute paths once the ability to choose what you want has been
+        # implemented. For now, the absolute paths make the output too hard to read.
+        header = source.split("/")[-1]
+        print(f"{indent}{header}", file=file)
         if source not in path:
             path.append(source)
             if source not in graph:
@@ -289,6 +292,10 @@ def output_dep_graph_graphviz(graph: Dict, file: TextIO):
     print("digraph header_graph {", file=file)
     for source, targets in graph.items():
         for target in targets:
+            # TODO: Leave the nodes as absolute paths once the ability to choose what you want has
+            # been implemented. For now, the absolute paths make the output too hard to read.
+            source = source.split("/")[-1]
+            target = target.split("/")[-1]
             print(f'\t"{source}" -> "{target}";', file=file)
     print("}", file=file)
 
