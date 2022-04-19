@@ -47,6 +47,13 @@ def parse_args():
         help="The output format for the parsed header dependency graph.",
     )
     parser.add_argument(
+        "--error-exit",
+        "-e",
+        action="store_true",
+        default=False,
+        help="Immediately exit with non-zero status on compilation errors",
+    )
+    parser.add_argument(
         "--log-level",
         "-l",
         type=str,
@@ -164,31 +171,32 @@ def parse_linemarkers_from_match(match: re.Match) -> Dict:
     return parsed
 
 
-def parse_linemarkers_from_preprocessor_output(proc: subprocess.Popen) -> Dict:
+def parse_linemarkers_from_preprocessor_output(proc: subprocess.Popen, error_exit: bool) -> Dict:
     """Parse the preprocessor linemarkers from the compiler stdout output."""
     for line in proc.stdout:
         match = LINEMARKER_PATTERN.match(line)
         if match is not None:
-            linemarker = parse_linemarkers_from_match(match)
-            yield linemarker
+            yield parse_linemarkers_from_match(match)
+
     proc.wait()
     if proc.returncode != 0:
-        logging.error("Failed on args: %s", proc.args)
-        # sys.exit(1)
+        logging.critical("Failed on args: %s", proc.args)
+        if error_exit:
+            sys.exit(1)
 
 
-def parse_source_file_linemarkers(source_entry: Dict) -> Iterable[Dict]:
+def parse_source_file_linemarkers(source_entry: Dict, error_exit: bool) -> Iterable[Dict]:
     """Invoke the preprocessor and parse its stdout to build the include graph.
 
     Assumes "-o" has been removed from the arguments and "-E" has been added. Munges through the
     compiler's stdout to find and parse preprocessor linemarkers.
     """
     proc = invoke_compiler(source_entry)
-    linemarkers = parse_linemarkers_from_preprocessor_output(proc)
+    linemarkers = parse_linemarkers_from_preprocessor_output(proc, error_exit)
     return linemarkers
 
 
-def get_tu_linemarkers(source_entry: Dict) -> Iterable[Dict]:
+def get_tu_linemarkers(source_entry: Dict, error_exit: bool) -> Iterable[Dict]:
     """Get the preprocessor linemarkers from the given translation unit database entry."""
     # Normalize "command" -> "arguments"
     source_entry = normalize_command_to_arguments(source_entry)
@@ -197,15 +205,15 @@ def get_tu_linemarkers(source_entry: Dict) -> Iterable[Dict]:
     # Instrument with -E
     source_entry["arguments"] += ["-E"]
     # Parse compiler output
-    linemarkers = parse_source_file_linemarkers(source_entry)
+    linemarkers = parse_source_file_linemarkers(source_entry, error_exit)
 
     return linemarkers
 
 
-def get_project_linemarkers(database: List[Dict]) -> Iterable[Dict]:
+def get_project_linemarkers(database: List[Dict], error_exit: bool) -> Iterable[Dict]:
     """Get the linemarkers from the given compilation database."""
     for entry in database:
-        entry_linemarkers = get_tu_linemarkers(entry)
+        entry_linemarkers = get_tu_linemarkers(entry, error_exit)
         # Mark the start of a new translation unit with a sentinel value
         yield None
         yield from entry_linemarkers
@@ -336,7 +344,7 @@ def main(args):
     database_path = pathlib.Path(args.compilation_database)
     database = load_compilation_database(database_path)
     logging.debug("Successfully loaded compilation database from '%s'", database_path)
-    linemarkers = get_project_linemarkers(database)
+    linemarkers = get_project_linemarkers(database, args.error_exit)
     include_graph = build_header_dependency_graph(linemarkers)
     output_dep_graph(include_graph, args.output, args.output_format)
 

@@ -55,8 +55,8 @@ These are the methods I currently know about.
 ## How to use?
 
 ```
-$ ./includegraph.py -h
-usage: includegraph.py [-h] [--output OUTPUT] [--output-format {graphviz,tree}] [--log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}] compilation-database
+$ ./includegraph.py --help
+usage: includegraph.py [--output OUTPUT] [--output-format {graphviz,tree}] [--error-exit] compilation-database
 
 Generate the C preprocessor header dependency graph from a Clang compilation database.
 
@@ -69,6 +69,7 @@ optional arguments:
                         The file to save the output to. Defaults to stdout.
   --output-format {graphviz,tree}, -O {graphviz,tree}
                         The output format for the parsed header dependency graph.
+  --error-exit, -e      Immediately exit with non-zero status on compilation errors
   --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}, -l {CRITICAL,ERROR,WARNING,INFO,DEBUG}
                         Set the logging output level. Defaults to INFO.
 ```
