@@ -11,7 +11,7 @@ from typing import Dict, Iterable, Set, TextIO
 repo_root = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(repo_root))
 try:
-    from includegraph import FileAttributes, GraphNode, output_graph_tgf
+    from includegraph import FileAttributes, GraphFormatter, GraphNode, SimpleTgfGraphFormatter
 except ImportError:
     logging.critical("Failed to import types from includegraph.py")
     raise
@@ -146,6 +146,7 @@ def parse_tgf_graph(input: TextIO) -> Dict[GraphNode, Set[GraphNode]]:
                 # enough that we could parse the hard way if we wanted.
                 file_attributes = eval(file_attributes, {}, {"FileAttributes": FileAttributes})
                 attributes[filename] = file_attributes
+                logging.debug("Parsed attributes for filename: '%s' -> '%s'", filename, file_attributes)
             except BaseException as e:
                 logging.error(
                     "Failed to parse attributes '%s' as FileAttributes", file_attributes, exc_info=e
@@ -254,12 +255,16 @@ def output_graph_graphviz(graph: Dict, output: TextIO):
 
 
 def output_graph(graph: Dict[GraphNode, Set[GraphNode]], output: TextIO, format: str):
+    formatter = None
     if format == "tgf":
-        output_graph_tgf(graph, output)
+        formatter = SimpleTgfGraphFormatter()
+        formatter.format(graph, output)
     elif format == "tree":
         output_graph_tree(graph, output)
     elif format == "graphviz":
         output_graph_graphviz(graph, output)
+    else:
+        sys.exit(1)
 
 
 def main(args):

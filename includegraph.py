@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate the C preprocessor header dependency graph from a Clang compilation database."""
+import abc
 import argparse
 import collections
 import json
@@ -9,7 +10,7 @@ import re
 import shlex
 import subprocess
 import sys
-from typing import Dict, Iterable, List, Optional, TextIO
+from typing import Dict, Iterable, List, Optional, Set, TextIO
 
 LOG_LEVELS = {
     "CRITICAL": logging.CRITICAL,
@@ -271,20 +272,64 @@ def build_header_dependency_graph(linemarkers: Iterable[Dict]) -> Dict:
     return graph
 
 
-def output_graph_tgf(graph: Dict, output: TextIO):
+class GraphFormatter(abc.ABC):
+    """A base class for formatting graphs.
+
+    The interface for this formatter forms a visitor pattern where each node in the node list is
+    visited, and then each edge in the edge list is visited.
+    """
+
+    def start_node_list(self, graph: Dict[GraphNode, Set[GraphNode]], output: TextIO):
+        """Mark the beginning of the node list.
+
+        Also marks the beginning of formatting.
+        """
+
+    def visit_node(self, node: GraphNode, output: TextIO):
+        """Visit a node in the node list."""
+
+    def finish_node_list(self, graph: Dict[GraphNode, Set[GraphNode]], output: TextIO):
+        """Mark the end of the node list."""
+
+    def start_edge_list(self, graph: Dict[GraphNode, Set[GraphNode]], output: TextIO):
+        """Mark the beginning of the edge list."""
+
+    def visit_edge(self, source: GraphNode, target: GraphNode, output: TextIO):
+        """Visit an edge in the edge list."""
+
+    def finish_edge_list(self, graph: Dict[GraphNode, Set[GraphNode]], output: TextIO):
+        """Mark the end of the edge list.
+
+        Also marks the end of formatting.
+        """
+
+    def format(self, graph: Dict[GraphNode, Set[GraphNode]], output: TextIO):
+        """Serialize the given graph to the given output object."""
+        self.start_node_list(graph, output)
+        for node in graph.keys():
+            self.visit_node(node, output)
+        self.finish_node_list(graph, output)
+        self.start_edge_list(graph, output)
+        for source, targets in graph.items():
+            for target in targets:
+                self.visit_edge(source, target, output)
+        self.finish_edge_list(graph, output)
+
+
+class SimpleTgfGraphFormatter(GraphFormatter):
     """Output the include graph in Trivial Graph Format.
 
     https://en.wikipedia.org/wiki/Trivial_Graph_Format
     """
-    for node in graph.keys():
-        print(f'"{node.filename}"\t{node.attributes}', file=output)
 
-    print("#", file=output)
+    def visit_node(self, node: GraphNode, output: TextIO):
+        print(f'"{node.filename}"\t"{node.attributes}"', file=output)
 
-    for source, targets in graph.items():
-        for target in targets:
-            # TODO: Support edge attributes?
-            print(f'"{source.filename}"\t"{target.filename}"', file=output)
+    def finish_node_list(self, graph: Dict[GraphNode, Set[GraphNode]], output: TextIO):
+        print("#", file=output)
+
+    def visit_edge(self, source: GraphNode, target: GraphNode, output: TextIO):
+        print(f'"{source.filename}"\t"{target.filename}"', file=output)
 
 
 def main(args):
@@ -293,7 +338,8 @@ def main(args):
     logging.debug("Successfully loaded compilation database from '%s'", database_path)
     linemarkers = get_project_linemarkers(database, args.error_exit)
     include_graph = build_header_dependency_graph(linemarkers)
-    output_graph_tgf(include_graph, args.output)
+    formatter = SimpleTgfGraphFormatter()
+    formatter.format(include_graph, args.output)
 
 
 if __name__ == "__main__":
