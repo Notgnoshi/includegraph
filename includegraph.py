@@ -166,7 +166,7 @@ def parse_linemarkers_from_match(match: re.Match) -> Dict:
     parsed["filename"] = raw["filename"].decode("utf-8")
 
     flags = raw["flags"].decode("utf-8").split()
-    parsed["flags"] = [int(f) for f in flags]
+    parsed["flags"] = tuple(int(f) for f in flags)
 
     return parsed
 
@@ -219,25 +219,42 @@ def get_project_linemarkers(database: List[Dict], error_exit: bool) -> Iterable[
         yield from entry_linemarkers
 
 
+# is_system_header: bool
+# is_top_level_system_header: bool
+# compile_failed: bool
+FileAttributes = collections.namedtuple(
+    "FileAttributes", ["is_system_header", "is_top_level_system_header", "compile_failed"]
+)
+# filename: str
+# attributes: FileAttributes
+GraphNode = collections.namedtuple("GraphNode", ["filename", "attributes"])
+
+
 def build_header_dependency_graph(linemarkers: Iterable[Dict]) -> Dict:
     """Build a dependency graph from a set of preprocessor linemarkers."""
     graph = collections.defaultdict(set)
     stack = []
-    current_tu = None
     for linemarker in linemarkers:
         if linemarker is None:
             stack.clear()
             continue
 
-        # The start of a new translation unit
-        if not stack:
-            current_tu = linemarker["filename"]
-            stack.append(current_tu)
-            if current_tu not in graph:
-                graph[current_tu] = set()
-
         filename = linemarker["filename"]
         flags = linemarker["flags"]
+        is_system_header = 3 in flags
+        is_top_level_system_header = is_system_header
+        if is_system_header and stack and stack[-1].attributes.is_system_header:
+            is_top_level_system_header = False
+        attributes = FileAttributes(
+            is_system_header, is_top_level_system_header, compile_failed=False
+        )
+        current_linemarker_node = GraphNode(filename=filename, attributes=attributes)
+
+        # The start of a new translation unit
+        if not stack:
+            stack.append(current_linemarker_node)
+            if current_linemarker_node not in graph:
+                graph[current_linemarker_node] = set()
 
         # Special case. I don't know man, the preprocessor generated a linemarker for a directory in
         # one of the projects I tested it on.
@@ -251,10 +268,10 @@ def build_header_dependency_graph(linemarkers: Iterable[Dict]) -> Dict:
 
         if 1 in flags:
             source = stack[-1]
-            target = filename
-            stack.append(filename)
+            target = current_linemarker_node
+            stack.append(target)
             # Skip system headers for now
-            if 3 not in flags:
+            if not is_system_header:
                 logging.debug("Adding: %s -> %s", source, target)
                 graph[source].add(target)
 
@@ -282,7 +299,7 @@ def topological_sort(graph: Dict[str, List[str]]) -> List[str]:
     return sorted_keys
 
 
-def output_dep_graph_tree(graph: Dict, file: TextIO):
+def output_dep_graph_tree(graph: Dict, output: TextIO):
     """Output the include graph as a tree.
 
     Example:
@@ -295,18 +312,18 @@ def output_dep_graph_tree(graph: Dict, file: TextIO):
     Each level of indentation will be a single tab character.
     """
 
-    def recursive_dfs_helper(graph: Dict, source: str, file: TextIO, depth: int, path=[]):
+    def recursive_dfs_helper(graph: Dict, source: GraphNode, depth: int, path=[]):
         indent = "\t" * depth
         # TODO: Leave the nodes as absolute paths once the ability to choose what you want has been
         # implemented. For now, the absolute paths make the output too hard to read.
-        header = source.split("/")[-1]
-        print(f"{indent}{header}", file=file)
+        header = source.filename.split("/")[-1]
+        print(f"{indent}{header}", file=output)
         if source not in path:
             path.append(source)
             if source not in graph:
                 return path
             for neighbor in graph[source]:
-                path = recursive_dfs_helper(graph, neighbor, file, depth + 1, path)
+                path = recursive_dfs_helper(graph, neighbor, depth + 1, path)
         return path
 
     # Don't crash on an empty graph
@@ -317,20 +334,22 @@ def output_dep_graph_tree(graph: Dict, file: TextIO):
     sorted_keys = topological_sort(graph)
     root = sorted_keys[-1]
 
-    recursive_dfs_helper(graph, root, file, depth=0)
+    recursive_dfs_helper(graph, root, depth=0)
 
 
-def output_dep_graph_graphviz(graph: Dict, file: TextIO):
+def output_dep_graph_graphviz(graph: Dict, output: TextIO):
     """Output the include graph in Graphviz format."""
-    print("digraph header_graph {", file=file)
+    print("digraph header_graph {", file=output)
     for source, targets in graph.items():
         for target in targets:
             # TODO: Leave the nodes as absolute paths once the ability to choose what you want has
             # been implemented. For now, the absolute paths make the output too hard to read.
-            source = source.split("/")[-1]
-            target = target.split("/")[-1]
-            print(f'\t"{source}" -> "{target}";', file=file)
-    print("}", file=file)
+            source = source.filename.split("/")[-1]
+            target = target.filename.split("/")[-1]
+            print(f'\t"{source}" -> "{target}";', file=output)
+    print("}", file=output)
+
+
 
 
 def output_dep_graph(graph: Dict, file: TextIO, format: str):
