@@ -42,9 +42,9 @@ def parse_args():
         "--output-format",
         "-O",
         type=str,
-        default="tree",
-        choices=["graphviz", "tree"],
-        help="The output format for the parsed header dependency graph.",
+        default="tgf",
+        choices=["graphviz", "tree", "tgf"],
+        help="The output format for the parsed header dependency graph. Defaults to TGF.",
     )
     parser.add_argument(
         "--error-exit",
@@ -350,10 +350,26 @@ def output_dep_graph_graphviz(graph: Dict, output: TextIO):
     print("}", file=output)
 
 
+def output_dep_graph_tgf(graph: Dict, output: TextIO):
+    """Output the include graph in Trivial Graph Format.
+
+    https://en.wikipedia.org/wiki/Trivial_Graph_Format
+    """
+    for node in graph.keys():
+        print(f'"{node.filename}"\t{node.attributes}', file=output)
+
+    print("#", file=output)
+
+    for source, targets in graph.items():
+        for target in targets:
+            # TODO: Support edge attributes?
+            print(f'"{source.filename}"\t"{target.filename}"', file=output)
 
 
 def output_dep_graph(graph: Dict, file: TextIO, format: str):
-    if format == "tree":
+    if format == "tgf":
+        output_dep_graph_tgf(graph, file)
+    elif format == "tree":
         output_dep_graph_tree(graph, file)
     elif format == "graphviz":
         output_dep_graph_graphviz(graph, file)
