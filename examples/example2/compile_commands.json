@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/nots/Documents/includegraph/examples/example2/build",
+  "command": "/usr/bin/c++  -I/home/nots/Documents/includegraph/examples/example2/include -I/home/nots/Documents/includegraph/examples/example2/src  -o CMakeFiles/example2.dir/src/example2.cpp.o -c /home/nots/Documents/includegraph/examples/example2/src/example2.cpp",
+  "file": "/home/nots/Documents/includegraph/examples/example2/src/example2.cpp"
+}
+]
