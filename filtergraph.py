@@ -217,6 +217,9 @@ def topological_sort(graph: Dict[Any, Iterable[Any]]) -> Iterable[Any]:
     return sorted_keys
 
 
+# TODO: This no longer works because of how nodes are added to the graph in includegraph.py
+# TODO: Further, this only works right if there's one translation unit. (the first topologically
+# sorted key, the rest of the top-level dependents will be missed)
 def output_graph_tree(graph: HeaderGraph, output: TextIO):
     """Output the include graph as a tree.
 
@@ -252,6 +255,11 @@ def output_graph_tree(graph: HeaderGraph, output: TextIO):
     recursive_dfs_helper(graph, root, depth=0)
 
 
+class SimpleTreeFormatter(GraphFormatter):
+    def format(self, graph: HeaderGraph, output: TextIO):
+        output_graph_tree(graph, output)
+
+
 class SimpleGraphvizFormatter(GraphFormatter):
     def start_node_list(self, graph: HeaderGraph, output: TextIO):
         print("digraph header_graph {", file=output)
@@ -267,14 +275,13 @@ def output_graph(graph: HeaderGraph, output: TextIO, format: str):
     formatter = None
     if format == "tgf":
         formatter = SimpleTgfGraphFormatter()
-        formatter.format(graph, output)
     elif format == "tree":
-        output_graph_tree(graph, output)
+        formatter = SimpleTreeFormatter()
     elif format == "graphviz":
         formatter = SimpleGraphvizFormatter()
-        formatter.format(graph, output)
     else:
         sys.exit(1)
+    formatter.format(graph, output)
 
 
 def main(args):

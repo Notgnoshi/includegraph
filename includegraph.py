@@ -243,6 +243,7 @@ def build_header_dependency_graph(linemarkers: Iterable[Dict]) -> HeaderGraph:
         attributes = FileAttributes(
             is_system_header, is_top_level_system_header, compile_failed=False
         )
+        # TODO: This breaks the topological sort in filtergraph.py
         current_linemarker_node = GraphNode(filename=filename, attributes=attributes)
         if current_linemarker_node not in graph:
             graph[current_linemarker_node] = set()
