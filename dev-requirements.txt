@@ -3,4 +3,6 @@
 
 black
 isort
+pydocstyle
+pylint
 pytest
