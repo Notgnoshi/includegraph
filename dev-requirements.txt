@@ -1,0 +1,6 @@
+# There are no requirements to run the tools from this project.
+# These dependencies are for developing on it
+
+black
+isort
+pytest
