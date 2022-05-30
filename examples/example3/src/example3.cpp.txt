@@ -1,0 +1,16 @@
+# 0 "/home/nots/Documents/includegraph/examples/example3/src/example3.cpp" 
+# 0 "<built-in>" 
+# 0 "<command-line>" 
+# 1 "/usr/include/stdc-predef.h" 1 3 4
+# 0 "<command-line>" 2
+# 1 "/home/nots/Documents/includegraph/examples/example3/src/example3.cpp" 
+# 1 "/home/nots/Documents/includegraph/examples/example3/include/example3/foo.h" 1
+# 2 "/home/nots/Documents/includegraph/examples/example3/src/example3.cpp" 2
+# 1 "/home/nots/Documents/includegraph/examples/example3/include/example3/bar.h" 1
+# 3 "/home/nots/Documents/includegraph/examples/example3/src/example3.cpp" 2
+# 1 "/home/nots/Documents/includegraph/examples/example3/src/private.h" 1
+# 1 "/home/nots/Documents/includegraph/examples/example3/src/circular.h" 1
+# 1 "/home/nots/Documents/includegraph/examples/example3/src/private.h" 1
+# 4 "/home/nots/Documents/includegraph/examples/example3/src/circular.h" 2
+# 4 "/home/nots/Documents/includegraph/examples/example3/src/private.h" 2
+# 4 "/home/nots/Documents/includegraph/examples/example3/src/example3.cpp" 2
