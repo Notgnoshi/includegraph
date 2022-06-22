@@ -256,8 +256,7 @@ def build_header_dependency_graph(linemarkers: Iterable[Linemarker]) -> IncludeG
             source = stack[-1]
             target = current_node
             stack.append(current_node)
-            # Skip system headers for now
-            if not current_node.is_system_header:
+            if not current_node.is_system_header or current_node.is_first_level_system_header:
                 logging.debug("Adding: %s -> %s", source, target)
                 graph[source].add(target)
 

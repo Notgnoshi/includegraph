@@ -20,6 +20,18 @@ def test_example1_cpp_graph(example1_src_example1_linemarkers):
                 "/home/nots/Documents/includegraph/examples/example1/include/example1/foo.h",
                 is_source_file=False,
             ),
+            IncludeGraphNode(
+                "/usr/include/stdc-predef.h",
+                is_source_file=False,
+                is_system_header=True,
+                is_first_level_system_header=True,
+            ),
+            IncludeGraphNode(
+                "/usr/include/c++/11/iostream",
+                is_source_file=False,
+                is_system_header=True,
+                is_first_level_system_header=True,
+            ),
         },
         IncludeGraphNode(
             "/home/nots/Documents/includegraph/examples/example1/src/private.h",
@@ -28,7 +40,24 @@ def test_example1_cpp_graph(example1_src_example1_linemarkers):
             IncludeGraphNode(
                 "/home/nots/Documents/includegraph/examples/example1/src/circular.h",
                 is_source_file=False,
-            )
+            ),
+            IncludeGraphNode(
+                "/usr/include/c++/11/vector",
+                is_source_file=False,
+                is_system_header=True,
+                is_first_level_system_header=True,
+            ),
+        },
+        IncludeGraphNode(
+            "/home/nots/Documents/includegraph/examples/example1/src/circular.h",
+            is_source_file=False,
+        ): {
+            IncludeGraphNode(
+                "/usr/include/c++/11/string",
+                is_source_file=False,
+                is_system_header=True,
+                is_first_level_system_header=True,
+            ),
         },
     }
     assert actual == expected
@@ -54,6 +83,12 @@ def test_example2_cpp_graph(example2_src_example2_linemarkers):
             IncludeGraphNode(
                 "/home/nots/Documents/includegraph/examples/example2/src/private.h",
                 is_source_file=False,
+            ),
+            IncludeGraphNode(
+                "/usr/include/stdc-predef.h",
+                is_source_file=False,
+                is_system_header=True,
+                is_first_level_system_header=True,
             ),
         },
         IncludeGraphNode(
@@ -88,6 +123,12 @@ def test_example3_cpp_graph(example3_src_example3_linemarkers):
             IncludeGraphNode(
                 "/home/nots/Documents/includegraph/examples/example3/src/private.h",
                 is_source_file=False,
+            ),
+            IncludeGraphNode(
+                "/usr/include/stdc-predef.h",
+                is_source_file=False,
+                is_system_header=True,
+                is_first_level_system_header=True,
             ),
         },
         IncludeGraphNode(
