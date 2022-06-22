@@ -4,12 +4,12 @@ import argparse
 import collections
 import json
 import logging
-import pathlib
 import re
 import shlex
 import subprocess
 import sys
-from typing import Dict, Iterable, List, Optional, TextIO
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Set, TextIO
 
 LOG_LEVELS = {
     "CRITICAL": logging.CRITICAL,
@@ -19,6 +19,16 @@ LOG_LEVELS = {
     "DEBUG": logging.DEBUG,
 }
 DEFAULT_LEVEL = "INFO"
+
+
+# Keys: "directory", "file", "arguments"
+CompilationDatabaseEntry = Dict[str, str]
+CompilationDatabase = Iterable[CompilationDatabaseEntry]
+# Keys: "linenumber" -> str, "filename" -> str, "tags" -> Tuple[int]
+Linemarker = Dict[str, str]
+IncludeGraphNode = str
+# source -> target
+IncludeGraph = Dict[IncludeGraphNode, Set[IncludeGraphNode]]
 
 
 def parse_args():
@@ -49,7 +59,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_compilation_database(compilation_database: pathlib.Path) -> Dict:
+def load_compilation_database(compilation_database: Path) -> CompilationDatabase:
     """Load the compilation database from the given path."""
     database = None
     try:
@@ -68,7 +78,9 @@ def load_compilation_database(compilation_database: pathlib.Path) -> Dict:
     return database
 
 
-def normalize_command_to_arguments(source_entry: Dict) -> Optional[Dict]:
+def normalize_command_to_arguments(
+    source_entry: CompilationDatabaseEntry,
+) -> Optional[CompilationDatabaseEntry]:
     """Normalize and validate the given database entry.
 
     See: https://clang.llvm.org/docs/JSONCompilationDatabase.html
@@ -106,7 +118,7 @@ def strip_output_argument(arguments: List[str]) -> List[str]:
     return stripped_args
 
 
-def invoke_compiler(source_entry) -> subprocess.Popen:
+def invoke_compiler(source_entry: CompilationDatabaseEntry) -> subprocess.Popen:
     """Run the command specified by the compilation database entry."""
     directory = source_entry["directory"]
     arguments = source_entry["arguments"]
@@ -122,7 +134,7 @@ LINEMARKER_FLAG_SYSTEM_HEADER = 3
 LINEMARKER_FLAG_EXTERN_C = 4
 
 
-def parse_linemarkers_from_match(match: re.Match) -> Dict:
+def parse_linemarkers_from_match(match: re.Match) -> Linemarker:
     """Turn the regex matches into a 'nice' data structure."""
     parsed = {}
     raw = match.groupdict()
@@ -131,12 +143,12 @@ def parse_linemarkers_from_match(match: re.Match) -> Dict:
     parsed["filename"] = raw["filename"].decode("utf-8")
 
     flags = raw["flags"].decode("utf-8").split()
-    parsed["flags"] = [int(f) for f in flags]
+    parsed["flags"] = tuple(int(f) for f in flags)
 
     return parsed
 
 
-def parse_linemarkers_from_preprocessor_output(proc: subprocess.Popen) -> Dict:
+def parse_linemarkers_from_preprocessor_output(proc: subprocess.Popen) -> Iterable[Linemarker]:
     """Parse the preprocessor linemarkers from the compiler stdout output."""
     for line in proc.stdout:
         match = LINEMARKER_PATTERN.match(line)
@@ -149,7 +161,7 @@ def parse_linemarkers_from_preprocessor_output(proc: subprocess.Popen) -> Dict:
         # sys.exit(1)
 
 
-def parse_source_file_linemarkers(source_entry: Dict) -> Iterable[Dict]:
+def preprocess_source_file(source_entry: CompilationDatabaseEntry) -> Iterable[Linemarker]:
     """Invoke the preprocessor and parse its stdout to build the include graph.
 
     Assumes "-o" has been removed from the arguments and "-E" has been added. Munges through the
@@ -160,7 +172,7 @@ def parse_source_file_linemarkers(source_entry: Dict) -> Iterable[Dict]:
     return linemarkers
 
 
-def get_tu_linemarkers(source_entry: Dict) -> Iterable[Dict]:
+def get_tu_linemarkers(source_entry: CompilationDatabaseEntry) -> Iterable[Linemarker]:
     """Get the preprocessor linemarkers from the given translation unit database entry."""
     # Normalize "command" -> "arguments"
     source_entry = normalize_command_to_arguments(source_entry)
@@ -169,12 +181,12 @@ def get_tu_linemarkers(source_entry: Dict) -> Iterable[Dict]:
     # Instrument with -E
     source_entry["arguments"] += ["-E"]
     # Parse compiler output
-    linemarkers = parse_source_file_linemarkers(source_entry)
+    linemarkers = preprocess_source_file(source_entry)
 
     return linemarkers
 
 
-def get_project_linemarkers(database: List[Dict]) -> Iterable[Dict]:
+def get_project_linemarkers(database: CompilationDatabase) -> Iterable[Linemarker]:
     """Get the linemarkers from the given compilation database."""
     for entry in database:
         entry_linemarkers = get_tu_linemarkers(entry)
@@ -183,7 +195,7 @@ def get_project_linemarkers(database: List[Dict]) -> Iterable[Dict]:
         yield from entry_linemarkers
 
 
-def build_header_dependency_graph(linemarkers: Iterable[Dict]) -> Dict:
+def build_header_dependency_graph(linemarkers: Iterable[Linemarker]) -> IncludeGraph:
     """Build a dependency graph from a set of preprocessor linemarkers."""
     graph = collections.defaultdict(set)
     stack = []
@@ -223,7 +235,7 @@ def build_header_dependency_graph(linemarkers: Iterable[Dict]) -> Dict:
     return graph
 
 
-def output_dep_graph_tgf(graph: Dict, output: TextIO):
+def output_dep_graph_tgf(graph: IncludeGraph, output: TextIO):
     """Output the include graph in TGF format."""
     for node in graph.keys():
         # TODO: Support node attributes
@@ -236,7 +248,7 @@ def output_dep_graph_tgf(graph: Dict, output: TextIO):
 
 
 def main(args):
-    database_path = pathlib.Path(args.compilation_database)
+    database_path = Path(args.compilation_database)
     database = load_compilation_database(database_path)
     logging.debug("Successfully loaded compilation database from '%s'", database_path)
     linemarkers = get_project_linemarkers(database)
