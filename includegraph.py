@@ -8,6 +8,7 @@ import re
 import shlex
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, TextIO
 
@@ -26,8 +27,32 @@ CompilationDatabaseEntry = Dict[str, str]
 CompilationDatabase = Iterable[CompilationDatabaseEntry]
 # Keys: "linenumber" -> str, "filename" -> str, "tags" -> Tuple[int]
 Linemarker = Dict[str, str]
-IncludeGraphNode = str
-# source -> target
+
+
+@dataclass
+class IncludeGraphNode:
+    """A node in an include dependency graph.
+
+    Represents a file; either a source file, or a header, and several attributes thereof.
+    """
+
+    # Absolute path
+    filename: str
+    # Whether it's a compiled source file, or an included header file
+    is_source_file: bool = True
+    # Whether this is a system header
+    is_system_header: bool = False
+    # Useful for trimming down the _massive_ system header graph to something useful for a developer
+    # That is, useful for ignoring system headers included by other system headers.
+    is_first_level_system_header: bool = False
+    # compilation_failed: bool
+
+    def __hash__(self):
+        """Determine node uniqueness only by its filename."""
+        return hash(self.filename)
+
+
+# source -> targets
 IncludeGraph = Dict[IncludeGraphNode, Set[IncludeGraphNode]]
 
 
@@ -198,22 +223,29 @@ def get_project_linemarkers(database: CompilationDatabase) -> Iterable[Linemarke
 def build_header_dependency_graph(linemarkers: Iterable[Linemarker]) -> IncludeGraph:
     """Build a dependency graph from a set of preprocessor linemarkers."""
     graph = collections.defaultdict(set)
-    stack = []
-    current_tu = None
+    stack: List[IncludeGraphNode] = []
     for linemarker in linemarkers:
         if linemarker is None:
             stack.clear()
             continue
 
-        # The start of a new translation unit
-        if not stack:
-            current_tu = linemarker["filename"]
-            stack.append(current_tu)
-            if current_tu not in graph:
-                graph[current_tu] = set()
-
         filename = linemarker["filename"]
         flags = linemarker["flags"]
+
+        current_node = IncludeGraphNode(filename=filename)
+
+        current_node.is_system_header = 3 in flags
+        current_node.is_first_level_system_header = current_node.is_system_header
+        if current_node.is_system_header and stack and stack[-1].is_system_header:
+            current_node.is_first_level_system_header = False
+        current_node.is_source_file = False
+
+        # The start of a new translation unit
+        if not stack:
+            current_node.is_source_file = True
+            stack.append(current_node)
+            if current_node not in graph:
+                graph[current_node] = set()
 
         # Ignore the linemarkers without flags. They either seem to be <built-in>, <command-line>,
         # or a duplicate of the start of the translation unit.
@@ -222,10 +254,10 @@ def build_header_dependency_graph(linemarkers: Iterable[Linemarker]) -> IncludeG
 
         if 1 in flags:
             source = stack[-1]
-            target = filename
-            stack.append(filename)
+            target = current_node
+            stack.append(current_node)
             # Skip system headers for now
-            if 3 not in flags:
+            if not current_node.is_system_header:
                 logging.debug("Adding: %s -> %s", source, target)
                 graph[source].add(target)
 
@@ -237,14 +269,15 @@ def build_header_dependency_graph(linemarkers: Iterable[Linemarker]) -> IncludeG
 
 def output_dep_graph_tgf(graph: IncludeGraph, output: TextIO):
     """Output the include graph in TGF format."""
+    node: IncludeGraphNode
     for node in graph.keys():
-        # TODO: Support node attributes
-        print(f'"{node}"', file=output)
+        print(f'"{node.filename}"', file=output)
     print("#", file=output)
+    source: IncludeGraphNode
+    targets: Set[IncludeGraphNode]
     for source, targets in graph.items():
         for target in targets:
-            # TODO: Support edge attributes
-            print(f'"{source}"\t"{target}"', file=output)
+            print(f'"{source.filename}"\t"{target.filename}"', file=output)
 
 
 def main(args):
