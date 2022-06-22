@@ -260,6 +260,11 @@ def build_header_dependency_graph(linemarkers: Iterable[Linemarker]) -> IncludeG
                 logging.debug("Adding: %s -> %s", source, target)
                 graph[source].add(target)
 
+                # Need to ensure that every node is added to the graph as a proper source node, not
+                # just a target.
+                if target not in graph:
+                    graph[target] = set()
+
         if 2 in flags:
             _ = stack.pop()
 
