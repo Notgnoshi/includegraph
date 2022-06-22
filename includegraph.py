@@ -39,14 +39,6 @@ def parse_args():
         help="The file to save the output to. Defaults to stdout.",
     )
     parser.add_argument(
-        "--output-format",
-        "-O",
-        type=str,
-        default="tgf",
-        choices=["graphviz", "tree", "tgf"],
-        help="The output format for the parsed header dependency graph.",
-    )
-    parser.add_argument(
         "--log-level",
         "-l",
         type=str,
@@ -231,75 +223,6 @@ def build_header_dependency_graph(linemarkers: Iterable[Dict]) -> Dict:
     return graph
 
 
-def topological_sort(graph: Dict[str, List[str]]) -> List[str]:
-    """Topologically sort the keys of a graph."""
-    sorted_keys = []
-    seen = set()
-
-    def recursive_helper(node: str):
-        for neighbor in graph.get(node, []):
-            if neighbor not in seen:
-                seen.add(neighbor)
-                recursive_helper(neighbor)
-        if node not in sorted_keys:
-            sorted_keys.append(node)
-
-    for key in graph.keys():
-        recursive_helper(key)
-    return sorted_keys
-
-
-def output_dep_graph_tree(graph: Dict, file: TextIO):
-    """Output the include graph as a tree.
-
-    Example:
-        example1.cpp
-            foo.h
-            bar.h
-            private.h
-                circular.h
-
-    Each level of indentation will be a single tab character.
-    """
-
-    def recursive_dfs_helper(graph: Dict, source: str, file: TextIO, depth: int, path=[]):
-        indent = "\t" * depth
-        # TODO: Leave the nodes as absolute paths once the ability to choose what you want has been
-        # implemented. For now, the absolute paths make the output too hard to read.
-        header = source.split("/")[-1]
-        print(f"{indent}{header}", file=file)
-        if source not in path:
-            path.append(source)
-            if source not in graph:
-                return path
-            for neighbor in graph[source]:
-                path = recursive_dfs_helper(graph, neighbor, file, depth + 1, path)
-        return path
-
-    # Don't crash on an empty graph
-    if not graph:
-        return
-
-    # Get a top-level candidate (is not depended on by anything else) to print first at depth=0
-    sorted_keys = topological_sort(graph)
-    root = sorted_keys[-1]
-
-    recursive_dfs_helper(graph, root, file, depth=0)
-
-
-def output_dep_graph_graphviz(graph: Dict, file: TextIO):
-    """Output the include graph in Graphviz format."""
-    print("digraph header_graph {", file=file)
-    for source, targets in graph.items():
-        for target in targets:
-            # TODO: Leave the nodes as absolute paths once the ability to choose what you want has
-            # been implemented. For now, the absolute paths make the output too hard to read.
-            source = source.split("/")[-1]
-            target = target.split("/")[-1]
-            print(f'\t"{source}" -> "{target}";', file=file)
-    print("}", file=file)
-
-
 def output_dep_graph_tgf(graph: Dict, output: TextIO):
     """Output the include graph in TGF format."""
     for node in graph.keys():
@@ -312,22 +235,13 @@ def output_dep_graph_tgf(graph: Dict, output: TextIO):
             print(f'"{source}"\t"{target}"', file=output)
 
 
-def output_dep_graph(graph: Dict, file: TextIO, format: str):
-    if format == "tree":
-        output_dep_graph_tree(graph, file)
-    elif format == "graphviz":
-        output_dep_graph_graphviz(graph, file)
-    elif format == "tgf":
-        output_dep_graph_tgf(graph, file)
-
-
 def main(args):
     database_path = pathlib.Path(args.compilation_database)
     database = load_compilation_database(database_path)
     logging.debug("Successfully loaded compilation database from '%s'", database_path)
     linemarkers = get_project_linemarkers(database)
     include_graph = build_header_dependency_graph(linemarkers)
-    output_dep_graph(include_graph, args.output, args.output_format)
+    output_dep_graph_tgf(include_graph, args.output)
 
 
 if __name__ == "__main__":
