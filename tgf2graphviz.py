@@ -154,9 +154,22 @@ def parse_tgf_graph(input: TextIO) -> IncludeGraph:
     return graph
 
 
+def output_graphviz_graph(graph: IncludeGraph, output: TextIO):
+    print("digraph include_dependency_graph {", file=output)
+    for src in graph.keys():
+        # TODO: Style based on the node attributes
+        print(f'  node [] "{src.filename}";', file=output)
+
+    print("", file=output)
+    for src in graph.keys():
+        for tgt in graph[src]:
+            print(f'  "{src.filename}" -> "{tgt.filename}";', file=output)
+    print("}", file=output)
+
+
 def main(args):
     graph = parse_tgf_graph(args.input)
-    print(graph)
+    output_graphviz_graph(graph, args.output)
 
 
 if __name__ == "__main__":
