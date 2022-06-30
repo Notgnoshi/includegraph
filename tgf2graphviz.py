@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Convert TGF graphs to Graphviz format."""
 import argparse
+import ast
 import logging
+import shlex
 import sys
 from pathlib import Path
+from typing import Dict, Generator, TextIO, Tuple
 
 # This is kind of hacky, but there's two other options:
 # 1. duplicate the shared stuff and hope they stay in sync
@@ -57,8 +60,103 @@ def parse_args():
     return parser.parse_args()
 
 
+def parse_tgf_node_list(
+    lines: Generator[str, None, None]
+) -> Generator[IncludeGraphNode, None, None]:
+    """Parse the node list from a TGF graph."""
+    for line in lines:
+        line = line.strip()
+
+        # We reached the separator between the node list and the edges
+        if line.startswith("#"):
+            break
+
+        filename, *attributes = shlex.split(line)
+        filename = filename.strip("'\"")
+
+        node = IncludeGraphNode(filename=filename)
+        if attributes:
+            attributes = ", ".join(attributes)
+            attributes = attributes.strip("'\"")
+            attributes = attributes.split(",")
+            try:
+                for attr in attributes:
+                    attr = attr.strip()
+                    lhs, rhs = attr.split("=")
+                    if getattr(node, lhs, None) is not None:
+                        value = ast.literal_eval(rhs)
+                        setattr(node, lhs, value)
+            except BaseException:
+                logging.error("Failed to parse attributes for %s", filename, exc_info=True)
+                continue
+        yield node
+
+
+def parse_tgf_edge_list(
+    lines: Generator[str, None, None], nodes: Dict[str, IncludeGraphNode]
+) -> Generator[Tuple[IncludeGraphNode, IncludeGraphNode], None, None]:
+    """Parse the edge list from a TGF graph."""
+    for line in lines:
+        line = line.strip()
+        source, target = None, None
+        try:
+            source, target, *label = shlex.split(line)
+            source = source.strip("'\"")
+            target = target.strip("'\"")
+
+            # We don't do anything with the label, if it's there, but parse it anyways.
+            label = " ".join(label)
+            label = label.strip("'\"")
+        except BaseException:
+            logging.error("Failed to parse edge from '%s'", line)
+            continue
+        # We can't just do graph[source].add(target) because the types in the graph are actual
+        # objects, not the string file names. So we need to look up the nodes in the graph keys.
+        source = nodes.get(source, None)
+        target = nodes.get(target, None)
+        if source is None or target is None:
+            logging.error("Edge line '%s' refers to a node not in the node list", line)
+            continue
+        yield source, target
+
+
+def parse_tgf_graph(input: TextIO) -> IncludeGraph:
+    """Parse an include graph in Trivial Graph Format.
+
+    Supports node metadata, but not edge metadata.
+
+    Example:
+        "/usr/include/stdc-predef.h"    "is_source_file=False, is_system_header=True,  is_first_level_system_header=True"
+        "include/example2/foo.h"        "is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+        "include/example2/bar.h"        "is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+        "src/private.h"                 "is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+        "src/circular.h"                "is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+        #
+        "src/example2.cpp"              "src/private.h"
+        "src/example2.cpp"              "/usr/include/stdc-predef.h"
+        "src/example2.cpp"              "include/example2/foo.h"
+        "src/example2.cpp"              "include/example2/bar.h"
+        "src/private.h"                 "src/circular.h"
+    """
+    # Needs to be an iterator so the second loop remembers where the first left off.
+    lines = iter(input.readlines())
+
+    nodes_iter = parse_tgf_node_list(lines)
+    graph: IncludeGraph = {}
+    nodes: Dict[str, IncludeGraphNode] = {}
+    for node in nodes_iter:
+        nodes[node.filename] = node
+        graph[node] = set()
+    edges = parse_tgf_edge_list(lines, nodes)
+    for source, target in edges:
+        graph[source].add(target)
+
+    return graph
+
+
 def main(args):
-    pass
+    graph = parse_tgf_graph(args.input)
+    print(graph)
 
 
 if __name__ == "__main__":
