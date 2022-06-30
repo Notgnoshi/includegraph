@@ -56,19 +56,18 @@ These are the methods I currently know about.
 
 ```
 $ ./includegraph.py -h
-usage: includegraph.py [-h] [--output OUTPUT] [--output-format {graphviz,tree}] [--log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}] compilation-database
+usage: includegraph.py [-h] [--full-system] [--output OUTPUT] [--log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}] compilation-database
 
 Generate the C preprocessor header dependency graph from a Clang compilation database.
 
 positional arguments:
   compilation-database  The path to the compilation database.
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
+  --full-system         Output the _full_ system header dependency graph, not just the first level
   --output OUTPUT, -o OUTPUT
                         The file to save the output to. Defaults to stdout.
-  --output-format {graphviz,tree}, -O {graphviz,tree}
-                        The output format for the parsed header dependency graph.
   --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}, -l {CRITICAL,ERROR,WARNING,INFO,DEBUG}
                         Set the logging output level. Defaults to INFO.
 ```
@@ -89,37 +88,29 @@ Generated examples/example3/build/compile_commands.json
 You can then run the [`includegraph.py`](includegraph.py) script on each of the compilation
 databases.
 
-### Example 1
+### TGF graph output
+
+The `includegraph.py` tool generates the graph in Trivial Graph Format, to support using a wide
+variety of tooling to post-process or visualize the graph.
 
 ```sh
 $ ./includegraph.py examples/example3/build/compile_commands.json
-example3.cpp
-    bar.h
-    private.h
-        circular.h
-            private.h
-    foo.h
+"examples/example3/src/example3.cpp"	"is_source_file=True, is_system_header=False, is_first_level_system_header=False"
+"/usr/include/stdc-predef.h"	"is_source_file=False, is_system_header=True, is_first_level_system_header=True"
+"examples/example3/include/example3/foo.h"	"is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+"examples/example3/include/example3/bar.h"	"is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+"examples/example3/src/private.h"	"is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+"examples/example3/src/circular.h"	"is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+#
+"examples/example3/src/example3.cpp"	"examples/example3/include/example3/foo.h"
+"examples/example3/src/example3.cpp"	"examples/example3/include/example3/bar.h"
+"examples/example3/src/example3.cpp"	"/usr/include/stdc-predef.h"
+"examples/example3/src/example3.cpp"	"examples/example3/src/private.h"
+"examples/example3/src/private.h"	"examples/example3/src/circular.h"
+"examples/example3/src/circular.h"	"examples/example3/src/private.h"
 ```
 
-You can also generate a Graphviz diagram
-```sh
-$ ./includegraph.py -O graphviz examples/example3/build/compile_commands.json
-digraph header_graph {
-    "example3.cpp" -> "private.h";
-    "example3.cpp" -> "foo.h";
-    "example3.cpp" -> "bar.h";
-    "private.h" -> "circular.h";
-    "circular.h" -> "private.h";
-}
-```
-which can be piped into `dot` or some other Graphviz renderer
-```sh
-$ ./includegraph.py examples/example1/build/ -O graphviz | dot -Tx11
-```
-
-![example1](examples/example1/graph.svg)
-
-### Example 2
+### Linemarkers
 Under the hood, `includegraph.py` invokes the compile command for each entry in the compilation
 database. It adds `-E` to stop after preprocessing, and strips out `-o` so that it can intercept any
 and all output.
@@ -145,11 +136,14 @@ $ c++ -Iexamples/example2/include -Iexamples/example2/src -c examples/example2/s
 ```
 Each of these lines is called a _linemarker_, as specified by
 https://gcc.gnu.org/onlinedocs/cpp/Preprocessor-Output.html
-This output is intercepted, and turned into a graph. This particular output is turned into
+This output is intercepted, and turned into a graph.
 
-![example2](examples/example2/graph.svg)
+The fact that this method can pick up on circular dependencies is why this script invokes the
+preprocessor, instead of using libclang to just parse the files. In the future, I may add an
+optional (because I want this to be portable, and only rely on the standard library) libclang
+dependency to generate the include graph that was actually followed.
 
-### Example 3
+### #pragma once
 `example3` is actually _identical_ to `example2`, except for one very small difference: `example2`
 uses `#pragma once` header guards, while `example3` uses `#ifndef, #define, #endif` header guards.
 This difference manifests itself in the preprocessor output with regards to circular `#include`:
@@ -179,8 +173,3 @@ the `#ifndef,define` header guards prevent the header's _contents_ from being in
 
 This impacts the generation of the graph; circular dependencies won't be caught with `#pragma once`
 header guards.
-
-![example3](examples/example3/graph.svg)
-
-I think that libraries like Boost that do weird multiple inclusions (recursive even) would also
-break the graph generation; we can't tell if subsequent inclusions are intended or not.
