@@ -4,7 +4,7 @@ from includegraph import IncludeGraphNode, build_header_dependency_graph
 
 
 def test_example1_cpp_graph(example1_src_example1_linemarkers):
-    actual = build_header_dependency_graph(example1_src_example1_linemarkers)
+    actual = build_header_dependency_graph(example1_src_example1_linemarkers, full_system=False)
 
     expected = {
         IncludeGraphNode(
@@ -92,7 +92,7 @@ def test_example1_cpp_graph(example1_src_example1_linemarkers):
 
 
 def test_example2_cpp_graph(example2_src_example2_linemarkers):
-    actual = build_header_dependency_graph(example2_src_example2_linemarkers)
+    actual = build_header_dependency_graph(example2_src_example2_linemarkers, full_system=False)
 
     expected = {
         IncludeGraphNode(
@@ -151,7 +151,7 @@ def test_example2_cpp_graph(example2_src_example2_linemarkers):
 
 
 def test_example3_cpp_graph(example3_src_example3_linemarkers):
-    actual = build_header_dependency_graph(example3_src_example3_linemarkers)
+    actual = build_header_dependency_graph(example3_src_example3_linemarkers, full_system=False)
 
     expected = {
         IncludeGraphNode(
