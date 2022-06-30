@@ -67,6 +67,12 @@ def parse_args():
         help="The path to the compilation database.",
     )
     parser.add_argument(
+        "--full-system",
+        action="store_true",
+        default=False,
+        help="Output the _full_ system header dependency graph, not just the first level",
+    )
+    parser.add_argument(
         "--output",
         "-o",
         type=argparse.FileType("w"),
@@ -220,7 +226,9 @@ def get_project_linemarkers(database: CompilationDatabase) -> Iterable[Linemarke
         yield from entry_linemarkers
 
 
-def build_header_dependency_graph(linemarkers: Iterable[Linemarker]) -> IncludeGraph:
+def build_header_dependency_graph(
+    linemarkers: Iterable[Linemarker], full_system: bool
+) -> IncludeGraph:
     """Build a dependency graph from a set of preprocessor linemarkers."""
     graph = collections.defaultdict(set)
     stack: List[IncludeGraphNode] = []
@@ -256,7 +264,11 @@ def build_header_dependency_graph(linemarkers: Iterable[Linemarker]) -> IncludeG
             source = stack[-1]
             target = current_node
             stack.append(current_node)
-            if not current_node.is_system_header or current_node.is_first_level_system_header:
+            if (
+                full_system
+                or not current_node.is_system_header
+                or current_node.is_first_level_system_header
+            ):
                 logging.debug("Adding: %s -> %s", source, target)
                 graph[source].add(target)
 
@@ -291,7 +303,7 @@ def main(args):
     database = load_compilation_database(database_path)
     logging.debug("Successfully loaded compilation database from '%s'", database_path)
     linemarkers = get_project_linemarkers(database)
-    include_graph = build_header_dependency_graph(linemarkers)
+    include_graph = build_header_dependency_graph(linemarkers, args.full_system)
     output_dep_graph_tgf(include_graph, args.output)
 
 
