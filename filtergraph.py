@@ -9,10 +9,13 @@ These two options can be given multiple times. If both --keep-only and --filter 
 --filter globs are applied after the --keep-only globs.
 """
 import argparse
+import collections
+import functools
+import itertools
 import logging
 import sys
-from pathlib import Path
-from typing import Dict, Iterable
+from pathlib import Path, PurePath
+from typing import Dict, Iterable, Set, Tuple
 
 # This is kind of hacky, but there's two other options:
 # 1. duplicate the shared stuff and hope they stay in sync
@@ -101,6 +104,74 @@ def parse_args():
     return parser.parse_args()
 
 
+def map_basenames_to_absolute(paths: Iterable[str]) -> Dict[str, Set[str]]:
+    """Map the file basenames to their absolute paths.
+
+    Example input:
+        /a/b/c.h
+        /a/b/d.h
+        /a/c/c.h
+
+    Example output:
+        c.h -> {/a/b/c.h, /a/c/c.h}
+        d.h -> {/a/b/d.h, }
+
+    A helper for shorten_absolute_paths.
+    """
+    mapping = collections.defaultdict(set)
+    for path in paths:
+        path = PurePath(path)
+        mapping[path.name].add(str(path))
+
+    return mapping
+
+
+def all_equal(s: Iterable) -> bool:
+    """Determine if every element of the given iterable are equal."""
+    g = itertools.groupby(s)
+    return next(g, True) and not next(g, False)
+
+
+def shortest_unique_suffixes(paths: Set[str]) -> Dict[str, str]:
+    """Find the shortest unique suffix for each of the given strings.
+
+    Example input:
+        {/a/b/c.h, /a/c/c.h}
+
+    Example output:
+        /a/b/c.h -> b/c.h
+        /a/c/c.h -> c/c.h
+    """
+    paths = list(paths)  # need deterministic ordering, so no set for you.
+    path_parts = (PurePath(p) for p in paths)
+    path_parts = (reversed(p.parts) for p in path_parts)
+    path_parts = zip(*path_parts)
+
+    # Start at the end:
+    # 0. (c.h, c.h)  # Equal, continue
+    # 1. (b/, c/)    # Not equal, break
+    # This results in:
+    # [(c.h, c.h), (b/, c/)]
+    suffixes = []
+    for level in path_parts:
+        # create the suffix for each path
+        suffixes.append(level)
+        if len(level) == 1 or not all_equal(level):
+            break
+
+    # Then we take
+    # [(c.h, c.h), (b/, c/)]
+    # and prepend the levels to generate
+    # (b/c.h, c/c.h)
+    def prepend_levels(level1: Tuple[str], level2: Tuple[str]) -> Tuple[str]:
+        return tuple(PurePath(l2) / l1 for l1, l2 in zip(level1, level2))
+
+    suffixes = functools.reduce(prepend_levels, suffixes)
+    suffixes = (str(s) for s in suffixes)
+    suffixes = dict(zip(paths, suffixes))
+    return suffixes
+
+
 def shorten_absolute_paths(paths: Iterable[str]) -> Dict[str, str]:
     """Shorten the given absolute paths into the shortest unique suffix.
 
@@ -116,7 +187,18 @@ def shorten_absolute_paths(paths: Iterable[str]) -> Dict[str, str]:
 
     That is, the returned dictionary maps the absolute paths to their shortened form.
     """
-    suffixes = dict((p, p) for p in paths)
+    suffixes = {}
+    # Determine if there are multiple occurrences of the same header
+    multiple_occurrences = map_basenames_to_absolute(paths)
+    for basename, occurrences in multiple_occurrences.items():
+        # Nominal case. There's no need to find the shortest suffix.
+        if len(occurrences) == 1:
+            absolute = occurrences.pop()
+            suffix = basename
+            suffixes[absolute] = suffix
+        else:
+            suffixes.update(shortest_unique_suffixes(occurrences))
+
     return suffixes
 
 
