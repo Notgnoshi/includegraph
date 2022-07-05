@@ -154,11 +154,22 @@ def parse_tgf_graph(input: TextIO) -> IncludeGraph:
     return graph
 
 
+def graphviz_node_attributes(node: IncludeGraphNode) -> str:
+    rval = ""
+
+    if node.is_source_file:
+        rval = " [shape=box, fillcolor=lightgray, style=filled]"
+    elif node.is_system_header:
+        rval = " [style=dashed]"
+
+    return rval
+
+
 def output_graphviz_graph(graph: IncludeGraph, output: TextIO):
     print("digraph include_dependency_graph {", file=output)
     for src in graph.keys():
-        # TODO: Style based on the node attributes
-        print(f'  node [] "{src.filename}";', file=output)
+        attributes = graphviz_node_attributes(src)
+        print(f'  "{src.filename}"{attributes};', file=output)
 
     print("", file=output)
     for src in graph.keys():
