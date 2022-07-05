@@ -110,6 +110,41 @@ $ ./includegraph.py examples/example3/build/compile_commands.json
 "examples/example3/src/circular.h"	"examples/example3/src/private.h"
 ```
 
+### Graphviz output
+
+The `tgf2graphviz.py` tool takes the TGF format, and converts it to Graphviz for visualization. The
+reason we go TGF -> graphviz instead of dumping strait to Graphviz, is that TGF is easier to parse,
+and easier to add arbitrary metadata to, so that you can query and filter the graph after it's
+dumped.
+
+```sh
+$ ./includegraph.py examples/example3/build/compile_commands.json | ./tgf2graphviz.py
+digraph include_dependency_graph {
+  "src/example3.cpp" [shape=box, fillcolor=lightgray, style=filled];
+  "/usr/include/stdc-predef.h" [style=dashed];
+  "include/example3/foo.h";
+  "include/example3/bar.h";
+  "src/private.h";
+  "src/circular.h";
+
+  "src/example3.cpp" -> "include/example3/bar.h";
+  "src/example3.cpp" -> "/usr/include/stdc-predef.h";
+  "src/example3.cpp" -> "include/example3/foo.h";
+  "src/example3.cpp" -> "src/private.h";
+  "src/private.h" -> "src/circular.h";
+  "src/circular.h" -> "src/private.h";
+}
+```
+
+which you can also pipe to `dot` to generate an SVG:
+```sh
+$ ./includegraph.py examples/example3/build/compile_commands.json |
+    ./tgf2graphviz.py |
+    dot -Tsvg -o examples/example3/graph.svg
+```
+
+![example3 graph.svg](examples/example3/graph.svg)
+
 ### Linemarkers
 Under the hood, `includegraph.py` invokes the compile command for each entry in the compilation
 database. It adds `-E` to stop after preprocessing, and strips out `-o` so that it can intercept any
