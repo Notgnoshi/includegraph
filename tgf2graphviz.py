@@ -37,7 +37,8 @@ def parse_args():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
-        "input",
+        "--input",
+        "-i",
         type=argparse.FileType("r"),
         default=sys.stdin,
         help="The file to read input from. Defaults to stdin.",
