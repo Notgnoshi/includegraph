@@ -11,6 +11,23 @@ These two options can be given multiple times. If both --keep-only and --filter 
 import argparse
 import logging
 import sys
+from pathlib import Path
+from typing import Dict, Iterable
+
+# This is kind of hacky, but there's two other options:
+# 1. duplicate the shared stuff and hope they stay in sync
+# 2. add an includegraph library, and require it gets installed in order to use the scripts
+# I don't like the first option because it's a maintenance nightmare, but I also don't like the
+# second option because it increases the friction to use these tools.
+repo_root = Path(__file__).resolve().parent
+repo_root = str(repo_root)
+sys.path.insert(0, repo_root)
+try:
+    from includegraph import output_dep_graph_tgf
+    from tgf2graphviz import IncludeGraph, parse_tgf_graph
+except ImportError:
+    logging.critical("Failed to import types from includegraph.py.")
+    raise
 
 LOG_LEVELS = {
     "CRITICAL": logging.CRITICAL,
@@ -84,8 +101,37 @@ def parse_args():
     return parser.parse_args()
 
 
+def shorten_absolute_paths(paths: Iterable[str]) -> Dict[str, str]:
+    """Shorten the given absolute paths into the shortest unique suffix.
+
+    Example input:
+        /a/b/c.h
+        /a/b/d.h
+        /a/c/c.h
+
+    Example output:
+        /a/b/c.h -> b/c.h
+        /a/b/d.h -> d.h
+        /a/c/c.h -> c/c.h
+
+    That is, the returned dictionary maps the absolute paths to their shortened form.
+    """
+    suffixes = dict((p, p) for p in paths)
+    return suffixes
+
+
 def main(args):
-    pass
+    graph: IncludeGraph = parse_tgf_graph(args.input)
+    # TODO: Filter the graph
+    if args.shorten_file_paths:
+        logging.debug("Shortening absolute file paths...")
+        paths = [node.filename for node in graph]
+        shortened_filenames = shorten_absolute_paths(paths)
+        for node in graph:
+            shortened_filename = shortened_filenames.get(node.filename, node.filename)
+            node.filename = shortened_filename
+
+    output_dep_graph_tgf(graph, args.output)
 
 
 if __name__ == "__main__":
