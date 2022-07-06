@@ -52,6 +52,12 @@ class IncludeGraphNode:
         """Determine node uniqueness only by its filename."""
         return hash(self.filename)
 
+    def __lt__(self, other):
+        return self.filename < other.filename
+
+    def __repr__(self):
+        return self.filename
+
 
 # source -> targets
 IncludeGraph = Dict[IncludeGraphNode, Set[IncludeGraphNode]]
