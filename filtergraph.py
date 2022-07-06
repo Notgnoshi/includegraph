@@ -15,7 +15,7 @@ import itertools
 import logging
 import sys
 from pathlib import Path, PurePath
-from typing import Dict, Iterable, Set, Tuple
+from typing import Callable, Dict, Iterable, List, Set, Tuple
 
 # This is kind of hacky, but there's two other options:
 # 1. duplicate the shared stuff and hope they stay in sync
@@ -27,7 +27,7 @@ repo_root = str(repo_root)
 sys.path.insert(0, repo_root)
 try:
     from includegraph import output_dep_graph_tgf
-    from tgf2graphviz import IncludeGraph, parse_tgf_graph
+    from tgf2graphviz import IncludeGraph, IncludeGraphNode, parse_tgf_graph
 except ImportError:
     logging.critical("Failed to import types from includegraph.py.")
     raise
@@ -202,9 +202,128 @@ def shorten_absolute_paths(paths: Iterable[str]) -> Dict[str, str]:
     return suffixes
 
 
+def matches_globs(s: str, patterns: List[str]) -> bool:
+    path = PurePath(s)
+    for pattern in patterns:
+        if path.match(pattern):
+            return True
+    return False
+
+
+def bfs(
+    graph: IncludeGraph,
+    source: IncludeGraphNode,
+    visitor: Callable[IncludeGraphNode, Set[IncludeGraphNode]],
+):
+    """Perform a breadth first search of the given graph starting at 'node'.
+
+    Calls 'visitor' on each node visited. The visitor returns the node's children. This is useful as
+    a mechanism to influence the graph traversal (e.g., early exit)
+    """
+    visited = set()
+    queue = collections.deque([source])
+    while queue:
+        current = queue.popleft()
+        visited.add(current)
+        children = visitor(current)
+        for child in children:
+            if child not in visited:
+                queue.append(child)
+                visited.add(child)
+
+
+def dfs(
+    graph: IncludeGraph,
+    source: IncludeGraphNode,
+    visitor: Callable[IncludeGraphNode, Set[IncludeGraphNode]],
+):
+    """Perform a depth first search of the given graph starting at 'node'.
+
+    Calls 'visitor' on each node visited. The visitor returns the node's children. This is useful as
+    a mechanism to influence the graph traversal (e.g., early exit)
+    """
+    visited = set()
+    # With the iterative algorithm, the only difference between DFS and BFS is it uses a stack
+    # instead of a queue.
+    stack = [source]
+    while stack:
+        current = stack.pop()
+        visited.add(current)
+        children = visitor(current)
+        for child in children:
+            if child not in visited:
+                stack.append(child)
+                visited.add(child)
+
+
+def filter_graph(graph: IncludeGraph, filter_globs: List[str]) -> IncludeGraph:
+    """Filter the given graph by a list of filter globs.
+
+    * Add metadata to each node when parsing the graph
+        * number of in-edges
+    * Build a set of unvisited nodes
+    * Search for nodes matching the filter pattern
+        * Pick an unvisited node
+            * optimization - pick a node with zero in-edges
+        * BFS, look for nodes that match the filter pattern
+            * If a matching node was found
+                * BFS
+                    * Remove any node with less than 2 in-edges
+                    * Early return (one stack frame) if all adjacent edges have at least 2 in-edges
+    """
+    unvisited_nodes = set(graph.keys())
+
+    def remove_if_not_included_by_something_else(node: IncludeGraphNode) -> bool:
+        # If multiple nodes include this one, we can't remove it, or any of its children
+        if node.num_in_edges > 1:
+            logging.debug("\t\t\tcan't remove %s", node)
+            return set()
+
+        logging.debug("\t\t\tRemoving %s", node)
+        children = graph[node]
+        del graph[node]
+        for child in children:
+            child.num_in_edges -= 1
+        # return set(child for child in children if child.num_in_edges > 1)
+        # return all(child.num_in_edges > 1 for child in children)
+        return set()
+
+    def remove_subtree_of_matching_node(node: IncludeGraphNode):
+        logging.info("\t\tRemoving subtree for node %s", node)
+        # Do another BFS search starting from this node, removing each visited node, if it wasn't
+        # included by another node.
+        bfs(graph, node, remove_if_not_included_by_something_else)
+
+    def remove_nodes_matching_glob(node: IncludeGraphNode) -> Set[IncludeGraphNode]:
+        # If we've already visited, we don't need to visit this node, or its children.
+        if node not in unvisited_nodes:
+            return set()
+        # Mark this node as visited
+        unvisited_nodes.discard(node)
+        logging.debug("\tVisiting %s", node)
+        if matches_globs(node.filename, filter_globs):
+            remove_subtree_of_matching_node(node)
+        return graph.get(node, set())
+
+    while unvisited_nodes:
+        # This is how you have to iterate over a set that changes size. Unfortunately though, it
+        # introduces randomness.
+        root = unvisited_nodes.pop()
+        unvisited_nodes.add(root)
+
+        # From this root, look for nodes that match any of our filters
+        logging.debug("Starting search from %s", root)
+        bfs(graph, root, remove_nodes_matching_glob)
+
+    return graph
+
+
 def main(args):
     graph: IncludeGraph = parse_tgf_graph(args.input)
-    # TODO: Filter the graph
+
+    if args.filter:
+        graph = filter_graph(graph, args.filter)
+
     if args.shorten_file_paths:
         logging.debug("Shortening absolute file paths...")
         paths = [node.filename for node in graph]
