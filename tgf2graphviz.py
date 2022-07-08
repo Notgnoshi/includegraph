@@ -150,6 +150,7 @@ def parse_tgf_graph(input: TextIO) -> IncludeGraph:
         graph[node] = set()
     edges = parse_tgf_edge_list(lines, nodes)
     for source, target in edges:
+        target.num_in_edges += 1
         graph[source].add(target)
 
     return graph

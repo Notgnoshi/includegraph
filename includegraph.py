@@ -46,6 +46,7 @@ class IncludeGraphNode:
     # That is, useful for ignoring system headers included by other system headers.
     is_first_level_system_header: bool = False
     # compilation_failed: bool
+    num_in_edges: int = 0
 
     def __hash__(self):
         """Determine node uniqueness only by its filename."""

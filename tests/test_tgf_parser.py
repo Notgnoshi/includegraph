@@ -3,17 +3,18 @@ import io
 from tgf2graphviz import IncludeGraphNode, parse_tgf_edge_list, parse_tgf_graph, parse_tgf_node_list
 
 example2_nodes_expected = [
-    IncludeGraphNode(filename="src/example2.cpp"),
+    IncludeGraphNode(filename="src/example2.cpp", num_in_edges=0),
     IncludeGraphNode(
         filename="/usr/include/stdc-predef.h",
         is_source_file=False,
         is_system_header=True,
         is_first_level_system_header=True,
+        num_in_edges=1,
     ),
-    IncludeGraphNode(filename="include/example2/foo.h", is_source_file=False),
-    IncludeGraphNode(filename="include/example2/bar.h", is_source_file=False),
-    IncludeGraphNode(filename="src/private.h", is_source_file=False),
-    IncludeGraphNode(filename="src/circular.h", is_source_file=False),
+    IncludeGraphNode(filename="include/example2/foo.h", is_source_file=False, num_in_edges=1),
+    IncludeGraphNode(filename="include/example2/bar.h", is_source_file=False, num_in_edges=1),
+    IncludeGraphNode(filename="src/private.h", is_source_file=False, num_in_edges=1),
+    IncludeGraphNode(filename="src/circular.h", is_source_file=False, num_in_edges=1),
 ]
 example2_node_input = [
     '"src/example2.cpp"	"is_source_file=True, is_system_header=False, is_first_level_system_header=False"',
@@ -60,13 +61,6 @@ def test_parse_nodes_stops_at_marker():
     nodes = list(nodes)  # need to exhaust the generator
     next_line = next(lines)
     assert next_line == example2_edges_input[0]
-
-
-def test_parse_nodes():
-    lines = iter(example2_node_input)
-    nodes = parse_tgf_node_list(lines)
-    nodes = list(nodes)
-    assert nodes == example2_nodes_expected
 
 
 def test_parse_edges():
