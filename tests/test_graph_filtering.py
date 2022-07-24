@@ -4,6 +4,7 @@ import io
 from filtergraph import (
     bfs,
     dfs,
+    filter_all_except,
     filter_graph,
     map_basenames_to_absolute,
     output_dep_graph_tgf,
@@ -251,6 +252,17 @@ def test_example4_c_star():
     expected_graph_inputs = remove_indices(example4_input, [2, 6, 14])
     expected_graph = parse_tgf_graph(lines2textio(expected_graph_inputs))
     filtered_graph = filter_graph(graph, globs)
+    assert_graph_equal(filtered_graph, expected_graph)
+
+
+def test_example4_b_h():
+    globs = ["b.h"]
+    graph = copy.deepcopy(example4_graph)
+    expected_graph_inputs = remove_indices(
+        example4_input, [0, 1, 2, 3, 6, 7, 10, 11, 12, 13, 14, 15]
+    )
+    expected_graph = parse_tgf_graph(lines2textio(expected_graph_inputs))
+    filtered_graph = filter_all_except(graph, globs)
     assert_graph_equal(filtered_graph, expected_graph)
 
 

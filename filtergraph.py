@@ -92,7 +92,7 @@ def parse_args():
         "-f",
         type=str,
         action="append",
-        help="Remove subtrees where the root nodes match the given filepath glob(s). Applied after any --keep globs, if any are present.",
+        help="Remove subtrees where the root nodes match the given filepath glob(s). Applied after any --keep-only globs, if any are present.",
     )
     parser.add_argument(
         "--keep-only",
@@ -299,9 +299,6 @@ def filter_graph(graph: IncludeGraph, filter_globs: List[str]) -> IncludeGraph:
             del graph[node]
 
     def remove_nodes_matching_glob(node: IncludeGraphNode) -> Set[IncludeGraphNode]:
-        # If we've already visited, we don't need to visit this node, or its children.
-        if node not in unvisited_nodes:
-            return set()
         # Mark this node as visited
         unvisited_nodes.discard(node)
         logging.debug("\tVisiting %s", node)
@@ -325,8 +322,50 @@ def filter_graph(graph: IncludeGraph, filter_globs: List[str]) -> IncludeGraph:
     return graph
 
 
+def recalculate_in_edges(graph: IncludeGraph) -> IncludeGraph:
+    """Recalculate the number of in-edges for each node."""
+    nodes = {}
+    for node in graph.keys():
+        node.num_in_edges = 0
+        nodes[node.filename] = node
+
+    for source, targets in graph.items():
+        for target in targets:
+            nodes[target.filename].num_in_edges += 1
+    return graph
+
+
+def filter_all_except(graph: IncludeGraph, exclusion_globs: List[str]) -> IncludeGraph:
+    """Filter everything except subtrees where the root matches some exclusion pattern."""
+    nodes_to_keep = set()
+    unvisited_nodes = set(graph.keys())
+
+    def mark_as_keep(node: IncludeGraphNode) -> Set[IncludeGraphNode]:
+        logging.debug("\tKeeping %s", node)
+        unvisited_nodes.discard(node)
+        nodes_to_keep.add(node)
+        return graph[node]
+
+    while unvisited_nodes:
+        node = unvisited_nodes.pop()
+        if matches_globs(node.filename, exclusion_globs):
+            bfs(graph, node, mark_as_keep)
+
+    graph = {n: t for n, t in graph.items() if n in nodes_to_keep}
+    for source, targets in graph.items():
+        graph[source] = set(t for t in targets if t in graph)
+
+    # The number of in-edges is calculated during graph parsing, but it's necessary to be correct
+    # for filter_graph() to work, so if we modify the graph, we need to update the edge count.
+    graph = recalculate_in_edges(graph)
+    return graph
+
+
 def main(args):
     graph: IncludeGraph = parse_tgf_graph(args.input)
+
+    if args.keep_only:
+        graph = filter_all_except(graph, args.keep_only)
 
     if args.filter:
         graph = filter_graph(graph, args.filter)
