@@ -52,26 +52,6 @@ These are the methods I currently know about.
   `--append`, you won't remove old files from the database if they were removed from your source
   tree.
 
-## How to use?
-
-```
-$ ./includegraph.py -h
-usage: includegraph.py [-h] [--full-system] [--output OUTPUT] [--log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}] compilation-database
-
-Generate the C preprocessor header dependency graph from a Clang compilation database.
-
-positional arguments:
-  compilation-database  The path to the compilation database.
-
-options:
-  -h, --help            show this help message and exit
-  --full-system         Output the _full_ system header dependency graph, not just the first level
-  --output OUTPUT, -o OUTPUT
-                        The file to save the output to. Defaults to stdout.
-  --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}, -l {CRITICAL,ERROR,WARNING,INFO,DEBUG}
-                        Set the logging output level. Defaults to INFO.
-```
-
 ## Examples
 
 This project includes several example C++ projects in `examples/`. You can generate the compilation
@@ -108,6 +88,82 @@ $ ./includegraph.py examples/example3/build/compile_commands.json
 "examples/example3/src/example3.cpp"	"examples/example3/src/private.h"
 "examples/example3/src/private.h"	"examples/example3/src/circular.h"
 "examples/example3/src/circular.h"	"examples/example3/src/private.h"
+```
+
+### Filtering subtrees
+
+The `filtergraph.py` tool filters the TGF graph output from `includegraph.py`. This lets you
+generate the full header graph once, and then prune it until it's useful for your particular use
+case.
+
+```sh
+$ ./includegraph.py --full-system examples/example1/build/compile_commands.json >example1.tgf
+$ wc -l example1.tgf
+401
+$ ./filtergraph.py -i example1.tgf --filter-transitive-system-headers
+"src/example1.cpp"	"is_source_file=True, is_system_header=False, is_first_level_system_header=False"
+"/usr/include/stdc-predef.h"	"is_source_file=False, is_system_header=True, is_first_level_system_header=True"
+"include/example1/foo.h"	"is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+"src/private.h"	"is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+"src/circular.h"	"is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+"/usr/include/c++/11/string"	"is_source_file=False, is_system_header=True, is_first_level_system_header=True"
+"/usr/include/c++/11/cwchar"	"is_source_file=False, is_system_header=True, is_first_level_system_header=False"
+"/usr/include/c++/11/vector"	"is_source_file=False, is_system_header=True, is_first_level_system_header=True"
+"/usr/include/c++/11/iostream"	"is_source_file=False, is_system_header=True, is_first_level_system_header=True"
+#
+"src/example1.cpp"	"/usr/include/c++/11/iostream"
+"src/example1.cpp"	"/usr/include/stdc-predef.h"
+"src/example1.cpp"	"src/private.h"
+"src/example1.cpp"	"include/example1/foo.h"
+"src/private.h"	"src/circular.h"
+"src/private.h"	"/usr/include/c++/11/vector"
+"src/circular.h"	"/usr/include/c++/11/string"
+```
+
+You can also provide globs for both removal patterns and exclusion patterns.
+
+```sh
+$ ./tgf2graphviz.py -i examples/circular.tgf | dot -Tx11
+```
+
+![circular](examples/circular.svg)
+
+```sh
+$ ./filtergraph.py --keep-only 'a.*' --keep-only 'b.h' -i examples/circular.tgf | ./tgf2graphviz.py | dot -Tx11
+```
+
+![circular-filtered-1](examples/circular-filtered-1.svg)
+
+```sh
+$ ./filtergraph.py --filter 'b.*' -i examples/circular.tgf | ./tgf2graphviz.py | dot -Tx11
+```
+
+![circular-filtered-2](examples/circular-filtered-2.svg)
+
+### Shortening node names
+
+By default, the tools use absolute paths for everything. But this can result in very long filenames
+that make the resulting graph _quite_ ugly. Use the `--shorted-file-paths` option for
+`filtergraph.py` to shorten the filenames.
+
+```sh
+$ ./filtergraph.py -i example1.tgf --filter-transitive-system-headers --shorten-file-paths
+"example1.cpp"	"is_source_file=True, is_system_header=False, is_first_level_system_header=False"
+"stdc-predef.h"	"is_source_file=False, is_system_header=True, is_first_level_system_header=True"
+"foo.h"	"is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+"private.h"	"is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+"circular.h"	"is_source_file=False, is_system_header=False, is_first_level_system_header=False"
+"string"	"is_source_file=False, is_system_header=True, is_first_level_system_header=True"
+"vector"	"is_source_file=False, is_system_header=True, is_first_level_system_header=True"
+"iostream"	"is_source_file=False, is_system_header=True, is_first_level_system_header=True"
+#
+"example1.cpp"	"private.h"
+"example1.cpp"	"foo.h"
+"example1.cpp"	"stdc-predef.h"
+"example1.cpp"	"iostream"
+"private.h"	"circular.h"
+"private.h"	"vector"
+"circular.h"	"string"
 ```
 
 ### Graphviz output
