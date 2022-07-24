@@ -272,6 +272,7 @@ def filter_graph(graph: IncludeGraph, filter_globs: List[str]) -> IncludeGraph:
                     * Early return (one stack frame) if all adjacent edges have at least 2 in-edges
     """
     unvisited_nodes = set(graph.keys())
+    nodes_to_delete = set()
 
     def remove_if_not_included_by_something_else(node: IncludeGraphNode) -> bool:
         # If multiple nodes include this one, we can't remove it, or any of its children
@@ -283,18 +284,19 @@ def filter_graph(graph: IncludeGraph, filter_globs: List[str]) -> IncludeGraph:
 
         logging.debug("\t\t\tRemoving %s", node)
         children = graph[node]
-        del graph[node]
-        for child in children:
-            child.num_in_edges -= 1
-        # return set(child for child in children if child.num_in_edges > 1)
-        # return all(child.num_in_edges > 1 for child in children)
-        return set()
+        nodes_to_delete.add(node)
+        return children
 
     def remove_subtree_of_matching_node(node: IncludeGraphNode):
         logging.info("\t\tRemoving subtree for node %s", node)
         # Do another BFS search starting from this node, removing each visited node, if it wasn't
         # included by another node.
         bfs(graph, node, remove_if_not_included_by_something_else)
+        while nodes_to_delete:
+            node = nodes_to_delete.pop()
+            for child in graph[node]:
+                child.num_in_edges -= 1
+            del graph[node]
 
     def remove_nodes_matching_glob(node: IncludeGraphNode) -> Set[IncludeGraphNode]:
         # If we've already visited, we don't need to visit this node, or its children.
