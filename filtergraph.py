@@ -275,7 +275,9 @@ def filter_graph(graph: IncludeGraph, filter_globs: List[str]) -> IncludeGraph:
 
     def remove_if_not_included_by_something_else(node: IncludeGraphNode) -> bool:
         # If multiple nodes include this one, we can't remove it, or any of its children
-        if node.num_in_edges > 1:
+        # Additionally, since we're iterating over the graph as we're removing nodes, we should skip
+        # anything that's already been removed.
+        if node.num_in_edges > 1 or node not in graph:
             logging.debug("\t\t\tcan't remove %s", node)
             return set()
 
