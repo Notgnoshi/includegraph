@@ -17,3 +17,4 @@
 "foo.h"     "string"
 "b.h"       "foo.h"
 "b.h"       "string"
+"foo.h"     "b.h"
