@@ -183,6 +183,23 @@ def test_dfs_circular():
     assert path == ["a.cpp", "foo.h", "string", "b.h", "a.h", "vector"]
 
 
+def test_example2_no_filtering():
+    globs = []
+    graph = copy.deepcopy(example2_graph)
+    expected_graph = parse_tgf_graph(lines2textio(example2_input))
+    filtered_graph = filter_graph(graph, globs)
+    assert_graph_equal(filtered_graph, expected_graph)
+
+
+def test_example2_filter_system():
+    globs = []
+    graph = copy.deepcopy(example2_graph)
+    expected_graph_inputs = remove_indices(example2_input, [1, 10])
+    expected_graph = parse_tgf_graph(lines2textio(expected_graph_inputs))
+    filtered_graph = filter_graph(graph, globs, filter_system_headers=True)
+    assert_graph_equal(filtered_graph, expected_graph)
+
+
 def test_example2_filter_circular():
     globs = ["src/circular.h"]
     graph = copy.deepcopy(example2_graph)

@@ -256,7 +256,12 @@ def dfs(
                 visited.add(child)
 
 
-def filter_graph(graph: IncludeGraph, filter_globs: List[str]) -> IncludeGraph:
+def filter_graph(
+    graph: IncludeGraph,
+    filter_globs: List[str],
+    filter_system_headers=False,
+    filter_transitive_system_headers=False,
+) -> IncludeGraph:
     """Filter the given graph by a list of filter globs.
 
     * Add metadata to each node when parsing the graph
@@ -302,7 +307,16 @@ def filter_graph(graph: IncludeGraph, filter_globs: List[str]) -> IncludeGraph:
         # Mark this node as visited
         unvisited_nodes.discard(node)
         logging.debug("\tVisiting %s", node)
-        if matches_globs(node.filename, filter_globs):
+        matches_glob = matches_globs(node.filename, filter_globs)
+        system_header = filter_system_headers and node.is_system_header
+        transitive_system_header = (
+            filter_transitive_system_headers
+            and node.is_system_header
+            # TODO: Make this is_transitive_system_header
+            and not node.is_first_level_system_header
+        )
+
+        if matches_glob or system_header or transitive_system_header:
             remove_subtree_of_matching_node(node)
         return graph.get(node, set())
 
@@ -368,7 +382,9 @@ def main(args):
         graph = filter_all_except(graph, args.keep_only)
 
     if args.filter:
-        graph = filter_graph(graph, args.filter)
+        graph = filter_graph(
+            graph, args.filter, args.filter_system_headers, args.filter_transitive_system_headers
+        )
 
     if args.shorten_file_paths:
         logging.debug("Shortening absolute file paths...")
