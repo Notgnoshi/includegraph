@@ -92,6 +92,7 @@ def parse_args():
         "-f",
         type=str,
         action="append",
+        default=[],
         help="Remove subtrees where the root nodes match the given filepath glob(s). Applied after any --keep-only globs, if any are present.",
     )
     parser.add_argument(
@@ -99,6 +100,7 @@ def parse_args():
         "-k",
         type=str,
         action="append",
+        default=[],
         help="Keep only subtrees where the root node matches the given filepath glob(s)",
     )
     return parser.parse_args()
@@ -379,15 +381,17 @@ def main(args):
     graph: IncludeGraph = parse_tgf_graph(args.input)
 
     if args.keep_only:
+        logging.info("Filtering everything except the given globs...")
         graph = filter_all_except(graph, args.keep_only)
 
-    if args.filter:
+    if args.filter or args.filter_system_headers or args.filter_transitive_system_headers:
+        logging.info("Filtering graph...")
         graph = filter_graph(
             graph, args.filter, args.filter_system_headers, args.filter_transitive_system_headers
         )
 
     if args.shorten_file_paths:
-        logging.debug("Shortening absolute file paths...")
+        logging.info("Shortening absolute file paths...")
         paths = [node.filename for node in graph]
         shortened_filenames = shorten_absolute_paths(paths)
         for node in graph:
