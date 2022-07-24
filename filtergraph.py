@@ -315,6 +315,9 @@ def filter_graph(graph: IncludeGraph, filter_globs: List[str]) -> IncludeGraph:
         logging.debug("Starting search from %s", root)
         bfs(graph, root, remove_nodes_matching_glob)
 
+    for source, targets in graph.items():
+        graph[source] = set(t for t in targets if t in graph)
+
     return graph
 
 
