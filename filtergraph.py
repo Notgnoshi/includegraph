@@ -287,7 +287,9 @@ def filter_graph(
         # If multiple nodes include this one, we can't remove it, or any of its children
         # Additionally, since we're iterating over the graph as we're removing nodes, we should skip
         # anything that's already been removed.
-        if node.num_in_edges > 1 or node not in graph:
+        if (
+            not matches_globs(node.filename, filter_globs) and node.num_in_edges > 1
+        ) or node not in graph:
             logging.debug("\t\t\tcan't remove %s", node)
             return set()
 
