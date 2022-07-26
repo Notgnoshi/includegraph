@@ -295,7 +295,7 @@ def filter_graph(
         return children
 
     def remove_subtree_of_matching_node(node: IncludeGraphNode):
-        logging.info("\t\tRemoving subtree for node %s", node)
+        logging.debug("\t\tRemoving subtree for node %s", node)
         # Do another BFS search starting from this node, removing each visited node, if it wasn't
         # included by another node.
         bfs(graph, node, remove_if_not_included_by_something_else)
@@ -308,7 +308,6 @@ def filter_graph(
     def remove_nodes_matching_glob(node: IncludeGraphNode) -> Set[IncludeGraphNode]:
         # Mark this node as visited
         unvisited_nodes.discard(node)
-        logging.debug("\tVisiting %s", node)
         matches_glob = matches_globs(node.filename, filter_globs)
         system_header = filter_system_headers and node.is_system_header
         transitive_system_header = (
@@ -329,7 +328,6 @@ def filter_graph(
         unvisited_nodes.add(root)
 
         # From this root, look for nodes that match any of our filters
-        logging.debug("Starting search from %s", root)
         bfs(graph, root, remove_nodes_matching_glob)
 
     for source, targets in graph.items():
@@ -345,8 +343,8 @@ def recalculate_in_edges(graph: IncludeGraph) -> IncludeGraph:
         node.num_in_edges = 0
         nodes[node.filename] = node
 
-    for source, targets in graph.items():
-        for target in targets:
+    for node in graph:
+        for target in graph[node]:
             nodes[target.filename].num_in_edges += 1
     return graph
 
@@ -357,7 +355,6 @@ def filter_all_except(graph: IncludeGraph, exclusion_globs: List[str]) -> Includ
     unvisited_nodes = set(graph.keys())
 
     def mark_as_keep(node: IncludeGraphNode) -> Set[IncludeGraphNode]:
-        logging.debug("\tKeeping %s", node)
         unvisited_nodes.discard(node)
         nodes_to_keep.add(node)
         return graph[node]
@@ -379,16 +376,20 @@ def filter_all_except(graph: IncludeGraph, exclusion_globs: List[str]) -> Includ
 
 def main(args):
     graph: IncludeGraph = parse_tgf_graph(args.input)
+    initial_size = len(graph)
+    logging.info("Parsed %d nodes", initial_size)
 
     if args.keep_only:
         logging.info("Filtering everything except the given globs...")
         graph = filter_all_except(graph, args.keep_only)
+        logging.info("Removed %d nodes", initial_size - len(graph))
 
     if args.filter or args.filter_system_headers or args.filter_transitive_system_headers:
         logging.info("Filtering graph...")
         graph = filter_graph(
             graph, args.filter, args.filter_system_headers, args.filter_transitive_system_headers
         )
+        logging.info("Removed %d nodes", initial_size - len(graph))
 
     if args.shorten_file_paths:
         logging.info("Shortening absolute file paths...")
