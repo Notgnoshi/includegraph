@@ -7,7 +7,7 @@ from filtergraph import (
     filter_all_except,
     filter_graph,
     map_basenames_to_absolute,
-    output_dep_graph_tgf,
+    matches_globs,
     parse_tgf_graph,
     shorten_absolute_paths,
     shortest_unique_suffixes,
@@ -335,3 +335,19 @@ def test_shotest_unique_suffix_all_different():
 def test_shorten_absolute_paths():
     actual_mapping = shorten_absolute_paths(example1_input)
     assert actual_mapping == example1_shortened_mapping
+
+
+def test_simple_globs():
+    path = "a.h"
+    globs = ["a.h"]
+    assert matches_globs(path, globs)
+    globs = ["a.*"]
+    assert matches_globs(path, globs)
+    globs = ["*.h"]
+    assert matches_globs(path, globs)
+
+
+def test_path_parts_globs():
+    path = "a/b/c/d.h"
+    globs = ["*b*"]
+    assert matches_globs(path, globs)

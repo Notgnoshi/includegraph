@@ -10,6 +10,7 @@ These two options can be given multiple times. If both --keep-only and --filter 
 """
 import argparse
 import collections
+import fnmatch
 import functools
 import itertools
 import logging
@@ -205,9 +206,8 @@ def shorten_absolute_paths(paths: Iterable[str]) -> Dict[str, str]:
 
 
 def matches_globs(s: str, patterns: List[str]) -> bool:
-    path = PurePath(s)
     for pattern in patterns:
-        if path.match(pattern):
+        if fnmatch.fnmatch(s, pattern):
             return True
     return False
 
