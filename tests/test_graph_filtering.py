@@ -127,7 +127,7 @@ def test_bfs():
     path = []
     graph = example4_graph
 
-    def visitor(node):
+    def visitor(graph, node):
         path.append(node)
         # sort the children for deterministic tests
         return sorted(list(graph[node]))
@@ -142,7 +142,7 @@ def test_bfs_circular():
     path = []
     graph = example5_graph
 
-    def visitor(node):
+    def visitor(graph, node):
         path.append(node)
         # sort the children for deterministic tests
         return sorted(list(graph[node]))
@@ -157,7 +157,7 @@ def test_dfs():
     path = []
     graph = example4_graph
 
-    def visitor(node):
+    def visitor(graph, node):
         path.append(node)
         # sort the children for deterministic tests
         return sorted(list(graph[node]))
@@ -172,7 +172,7 @@ def test_dfs_circular():
     path = []
     graph = example5_graph
 
-    def visitor(node):
+    def visitor(graph, node):
         path.append(node)
         # sort the children for deterministic tests
         return sorted(list(graph[node]))
