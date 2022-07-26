@@ -227,7 +227,7 @@ def bfs(
     while queue:
         current = queue.popleft()
         visited.add(current)
-        children = visitor(current)
+        children = visitor(graph, current)
         for child in children:
             if child not in visited:
                 queue.append(child)
@@ -251,7 +251,7 @@ def dfs(
     while stack:
         current = stack.pop()
         visited.add(current)
-        children = visitor(current)
+        children = visitor(graph, current)
         for child in children:
             if child not in visited:
                 stack.append(child)
@@ -281,7 +281,9 @@ def filter_graph(
     unvisited_nodes = set(graph.keys())
     nodes_to_delete = set()
 
-    def remove_if_not_included_by_something_else(node: IncludeGraphNode) -> bool:
+    def remove_if_not_included_by_something_else(
+        graph: IncludeGraph, node: IncludeGraphNode
+    ) -> bool:
         # If multiple nodes include this one, we can't remove it, or any of its children
         # Additionally, since we're iterating over the graph as we're removing nodes, we should skip
         # anything that's already been removed.
@@ -305,7 +307,9 @@ def filter_graph(
                 child.num_in_edges -= 1
             del graph[node]
 
-    def remove_nodes_matching_glob(node: IncludeGraphNode) -> Set[IncludeGraphNode]:
+    def remove_nodes_matching_glob(
+        graph: IncludeGraph, node: IncludeGraphNode
+    ) -> Set[IncludeGraphNode]:
         # Mark this node as visited
         unvisited_nodes.discard(node)
         matches_glob = matches_globs(node.filename, filter_globs)
@@ -354,7 +358,7 @@ def filter_all_except(graph: IncludeGraph, exclusion_globs: List[str]) -> Includ
     nodes_to_keep = set()
     unvisited_nodes = set(graph.keys())
 
-    def mark_as_keep(node: IncludeGraphNode) -> Set[IncludeGraphNode]:
+    def mark_as_keep(graph: IncludeGraph, node: IncludeGraphNode) -> Set[IncludeGraphNode]:
         unvisited_nodes.discard(node)
         nodes_to_keep.add(node)
         return graph[node]
