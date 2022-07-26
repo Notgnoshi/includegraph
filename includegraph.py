@@ -336,7 +336,7 @@ def merge_graphs(subgraphs: Iterable[IncludeGraph]) -> IncludeGraph:
 def output_dep_graph_tgf(graph: IncludeGraph, output: TextIO):
     """Output the include graph in TGF format."""
     node: IncludeGraphNode
-    for node in graph.keys():
+    for node in sorted(graph.keys()):
         # attributes aren't allowed to have commas.
         attributes = f"is_source_file={node.is_source_file}, is_system_header={node.is_system_header}, is_first_level_system_header={node.is_first_level_system_header}"
         print(f'"{node.filename}"\t"{attributes}"', file=output)
@@ -344,7 +344,7 @@ def output_dep_graph_tgf(graph: IncludeGraph, output: TextIO):
     source: IncludeGraphNode
     targets: Set[IncludeGraphNode]
     for source, targets in graph.items():
-        for target in targets:
+        for target in sorted(targets):
             print(f'"{source.filename}"\t"{target.filename}"', file=output)
 
 
