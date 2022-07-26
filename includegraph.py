@@ -2,8 +2,11 @@
 """Generate the C preprocessor header dependency graph from a Clang compilation database."""
 import argparse
 import collections
+import concurrent.futures
+import functools
 import json
 import logging
+import os
 import re
 import shlex
 import subprocess
@@ -73,6 +76,7 @@ def parse_args():
         type=str,
         help="The path to the compilation database.",
     )
+    parser.add_argument("--jobs", "-j", default=None, type=int, help="Number of parallel jobs")
     parser.add_argument(
         "--full-system",
         action="store_true",
@@ -160,7 +164,8 @@ def invoke_compiler(source_entry: CompilationDatabaseEntry) -> subprocess.Popen:
     """Run the command specified by the compilation database entry."""
     directory = source_entry["directory"]
     arguments = source_entry["arguments"]
-    logging.info("Invoking compiler with: %s", arguments)
+    logging.debug("Invoking compiler with: %s", arguments)
+    # TODO: discard stderr
     return subprocess.Popen(arguments, cwd=directory, stdout=subprocess.PIPE)
 
 
@@ -290,6 +295,44 @@ def build_header_dependency_graph(
     return graph
 
 
+def build_graph_for_tu(entry: CompilationDatabaseEntry, idx, total, full_system) -> IncludeGraph:
+    logging.info("(%d/%d) Processing dependencies for '%s'...", idx, total, entry["file"])
+    linemarkers = get_tu_linemarkers(entry)
+    graph = build_header_dependency_graph(linemarkers, full_system)
+    logging.debug("(%d/%d) Processed dependencies for '%s'.", idx, total, entry["file"])
+    return graph
+
+
+def build_graphs_in_parallel(
+    database: CompilationDatabase, full_system: bool, jobs: int
+) -> Iterable[IncludeGraph]:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=jobs)
+    total = len(database)
+    futures = {
+        executor.submit(build_graph_for_tu, entry, idx + 1, total, full_system): entry
+        for idx, entry in enumerate(database)
+    }
+
+    for future in concurrent.futures.as_completed(futures):
+        entry = futures[future]
+        try:
+            subgraph = future.result()
+            yield subgraph
+        except BaseException as e:
+            logging.error("Failed to generate dependency graph for '%s'", entry["file"], exc_info=e)
+
+
+def merge_two_graphs(lhs: IncludeGraph, rhs: IncludeGraph) -> IncludeGraph:
+    result = lhs
+    for key, value in rhs.items():
+        result[key] = result[key].union(value)
+    return result
+
+
+def merge_graphs(subgraphs: Iterable[IncludeGraph]) -> IncludeGraph:
+    return functools.reduce(merge_two_graphs, subgraphs)
+
+
 def output_dep_graph_tgf(graph: IncludeGraph, output: TextIO):
     """Output the include graph in TGF format."""
     node: IncludeGraphNode
@@ -309,9 +352,11 @@ def main(args):
     database_path = Path(args.compilation_database)
     database = load_compilation_database(database_path)
     logging.debug("Successfully loaded compilation database from '%s'", database_path)
-    linemarkers = get_project_linemarkers(database)
-    include_graph = build_header_dependency_graph(linemarkers, args.full_system)
-    output_dep_graph_tgf(include_graph, args.output)
+
+    jobs = args.jobs or os.cpu_count()
+    subgraphs = build_graphs_in_parallel(database, args.full_system, jobs)
+    graph = merge_graphs(subgraphs)
+    output_dep_graph_tgf(graph, args.output)
 
 
 if __name__ == "__main__":
