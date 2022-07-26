@@ -272,7 +272,7 @@ def test_example4_c_star():
     assert_graph_equal(filtered_graph, expected_graph)
 
 
-def test_example4_b_h():
+def test_example4_all_except_b_h():
     globs = ["b.h"]
     graph = copy.deepcopy(example4_graph)
     expected_graph_inputs = remove_indices(
