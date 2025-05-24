@@ -2,6 +2,11 @@
 
 Generate C preprocessor `#include` graphs from a Clang compilation database
 
+> [!Warning]
+> This project is archived in favor of the (better) https://github.com/bkryza/clang-include-graph
+
+---
+
 ## Why?
 
 I've been unsatisfied with tooling to understand the header dependency graph for nontrivial C++
